@@ -60,6 +60,7 @@ export type ServerEvent =
   | { type: "agent.interrupted"; response_id: string | null; response_seq: number }
   | { type: "metrics.updated"; metrics: LiveMetrics }
   | { type: "metrics.turn"; response_id: string; stt_ms: number | null; llm_first_token_ms: number | null; first_audio_ms: number | null }
+  | { type: "mic.stats"; peak: number; speech: number; threshold: number }
   | { type: "pong"; t: number }
   | { type: "error"; code: string; message: string; recoverable: boolean };
 

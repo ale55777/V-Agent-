@@ -14,6 +14,8 @@ const ORB_COLORS: Partial<Record<SessionState, [string, string]>> = {
   CONNECTING: ["#7c6cff", "#334155"],
 };
 
+const VISUAL_INTERVAL_MS = 80;
+
 function peakOf(analyser: AnalyserNode | null, data: Uint8Array<ArrayBuffer>): number {
   if (!analyser) return 0;
   analyser.getByteTimeDomainData(data);
@@ -33,22 +35,21 @@ export function VoiceOrb({
 
   useEffect(() => {
     const data = new Uint8Array(new ArrayBuffer(512));
-    let frame = 0;
     let level = 0;
-    const draw = () => {
+    // A timer at about 12 fps, not requestAnimationFrame: drawing at 60 fps was measured using
+    // over 2 CPU threads on an integrated GPU, slowing speech recognition by more than 10x.
+    const timer = setInterval(() => {
+      if (document.hidden) return;
       const current = stateRef.current;
       const source = current === "SPEAKING" ? aiAnalyser() : current === "PAUSED" ? null : micAnalyser();
       const target = source ? peakOf(source, data) : 0;
-      level += (target - level) * 0.25;
+      const next = level + (target - level) * 0.5;
+      if (Math.abs(next - level) < 0.004) return;
+      level = next;
       if (orb.current) orb.current.style.transform = `scale(${1 + level * 0.28})`;
-      if (halo.current) {
-        halo.current.style.transform = `scale(${1.1 + level * 0.8})`;
-        halo.current.style.opacity = String(0.25 + level * 0.6);
-      }
-      frame = requestAnimationFrame(draw);
-    };
-    frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+      if (halo.current) halo.current.style.opacity = String(0.25 + level * 0.6);
+    }, VISUAL_INTERVAL_MS);
+    return () => clearInterval(timer);
   }, [micAnalyser, aiAnalyser]);
 
   const [from, to] = ORB_COLORS[state] ?? ["#7c6cff", "#334155"];
@@ -56,19 +57,16 @@ export function VoiceOrb({
     <div className="relative grid h-52 w-52 place-items-center sm:h-64 sm:w-64" aria-hidden>
       <div
         ref={halo}
-        className="absolute inset-6 rounded-full blur-2xl transition-colors duration-500"
-        style={{ background: `radial-gradient(circle, ${from}, transparent 70%)` }}
+        className="absolute inset-0 rounded-full"
+        style={{ background: `radial-gradient(circle, ${from}, transparent 68%)`, opacity: 0.25 }}
       />
       {state === "PROCESSING" && (
         <div className="absolute inset-3 animate-spinslow rounded-full border-2 border-transparent border-t-think/70" />
       )}
       <div
         ref={orb}
-        className="h-36 w-36 rounded-full shadow-2xl sm:h-44 sm:w-44"
-        style={{
-          background: `radial-gradient(circle at 32% 28%, #ffffffcc, ${from} 34%, ${to} 88%)`,
-          transition: "background 400ms",
-        }}
+        className="h-36 w-36 rounded-full sm:h-44 sm:w-44"
+        style={{ background: `radial-gradient(circle at 32% 28%, #ffffffcc, ${from} 34%, ${to} 88%)` }}
       />
     </div>
   );
@@ -83,8 +81,8 @@ export function Waveform({ analyser, color, label }: { analyser: () => AnalyserN
     const context = element?.getContext("2d");
     if (!element || !context) return;
     const data = new Uint8Array(new ArrayBuffer(512));
-    let frame = 0;
     const draw = () => {
+      if (document.hidden) return;
       const { width, height } = element;
       context.clearRect(0, 0, width, height);
       const node = analyser();
@@ -93,7 +91,7 @@ export function Waveform({ analyser, color, label }: { analyser: () => AnalyserN
       context.beginPath();
       if (node) {
         node.getByteTimeDomainData(data);
-        for (let i = 0; i < data.length; i++) {
+        for (let i = 0; i < data.length; i += 8) {
           const x = (i / (data.length - 1)) * width;
           const y = (data[i] / 255) * height;
           if (i) context.lineTo(x, y);
@@ -104,10 +102,10 @@ export function Waveform({ analyser, color, label }: { analyser: () => AnalyserN
         context.lineTo(width, height / 2);
       }
       context.stroke();
-      frame = requestAnimationFrame(draw);
     };
-    frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+    draw();
+    const timer = setInterval(draw, VISUAL_INTERVAL_MS);
+    return () => clearInterval(timer);
   }, [analyser, color]);
 
   return (

@@ -52,7 +52,7 @@ class WhisperRecognizer:
         segments, info = self._model.transcribe(
             samples,
             language=language if language and language != "auto" else None,
-            beam_size=1 if not final else 2,
+            beam_size=1,  # Fastest. Latency matters more here than a small accuracy gain.
             best_of=1,
             temperature=0.0,
             vad_filter=False,  # Silero has already segmented this audio.

@@ -113,6 +113,14 @@ def test_chunker_releases_a_long_first_clause_early():
     assert len(pieces) >= 2
 
 
+def test_chunker_releases_a_long_unpunctuated_sentence_without_losing_words():
+    text = " ".join(f"word{i}" for i in range(60))
+    pieces = stream(SentenceChunker(), text)
+    assert len(pieces) > 1
+    assert " ".join(pieces) == text
+    assert all(len(p) <= 100 for p in pieces)
+
+
 def test_context_keeps_recent_turns_when_conversation_exceeds_limit():
     history = []
     for i in range(400):

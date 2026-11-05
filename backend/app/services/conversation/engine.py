@@ -47,6 +47,8 @@ PROTOCOL_VERSION = 1
 MIN_UTTERANCE_SECONDS = 0.3
 WAKE_WINDOW_SECONDS = 20.0
 LAG_WARNING_FRAMES = 16  # about half a second behind real time
+MIC_REPORT_FRAMES = 156  # about every 5 seconds
+PARTIAL_MAX_STT_SECONDS = 3.0
 
 
 class State(str, Enum):
@@ -105,6 +107,7 @@ class ActiveResponse:
     chunks: dict[int, PlaybackChunk] = field(default_factory=dict)
     generated: list[str] = field(default_factory=list)
     generation_done: bool = False
+    speech_done: bool = False  # Every generated sentence has been synthesised and sent.
     finalized: bool = False
     metrics: TurnMetrics | None = None
     first_audio_seen: bool = False
@@ -125,8 +128,10 @@ class ActiveResponse:
         return sum(chunk.played_ms for chunk in self.chunks.values()) / 1000
 
     def all_played(self) -> bool:
+        # speech_done, not generation_done: the LLM can finish while sentences still wait for
+        # TTS. Treating that as the end cut replies off after their first played sentence.
         return (
-            self.generation_done
+            self.speech_done
             and bool(self.chunks)
             and all(chunk.played_ms >= chunk.duration_ms for chunk in self.chunks.values())
         )
@@ -184,6 +189,10 @@ class ConversationEngine:
         self._last_spoken_text = ""
         self._mic_muted_by_pause = False
         self._paused = False
+        self._mic_peak = 0.0
+        self._mic_speech = 0.0
+        self._mic_frames = 0
+        self._stt_seconds = 0.0
         self._wake_until = 0.0
         self.dropped_frames = 0
         self.ended = False
@@ -281,6 +290,7 @@ class ConversationEngine:
                     len(batch) * 32, self.dropped_frames, previous_batch_ms, idle * 1000,
                 )
             started = time.perf_counter()
+            probabilities: list[float] = []
             try:
                 probabilities = await loop.run_in_executor(self.executors.vad, self._score_frames, batch)
                 for frame, probability in zip(batch, probabilities):
@@ -291,6 +301,29 @@ class ConversationEngine:
                 log.exception("Error processing a microphone frame")
             finished_at = time.perf_counter()
             previous_batch_ms = (finished_at - started) * 1000
+            await self._report_mic(batch, probabilities)
+
+    async def _report_mic(self, frames: list[bytes], probabilities: list[float]) -> None:
+        """Every few seconds, report how loud the mic is and how speech-like it sounds.
+
+        These are two numbers only; no audio is kept. They separate the causes of "it does
+        not hear me": a silent device, sound that is not speech, or speech it did detect.
+        """
+        for frame in frames:
+            self._mic_peak = max(self._mic_peak, float(np.abs(pcm16_to_float(frame)).max()))
+        if probabilities:
+            self._mic_speech = max(self._mic_speech, max(probabilities))
+        self._mic_frames += len(frames)
+        if self._mic_frames < MIC_REPORT_FRAMES:
+            return
+        peak, speech = self._mic_peak, self._mic_speech
+        self._mic_peak = self._mic_speech = 0.0
+        self._mic_frames = 0
+        log.info(
+            "Mic: peak level %.4f, highest speech probability %.2f (needs %.2f), state %s",
+            peak, speech, self.config.vad.threshold, self.state.value,
+        )
+        await self.emit("mic.stats", peak=round(peak, 4), speech=round(speech, 3), threshold=self.config.vad.threshold)
 
     def _score_frames(self, frames: list[bytes]) -> list[float]:
         return [self.vad_model.probability(pcm16_to_float(frame)) for frame in frames]
@@ -355,6 +388,9 @@ class ConversationEngine:
         # for that, and a partial would also hold up the final transcription queued behind it.
         if self._response is not None or (self._utterance_task and not self._utterance_task.done()):
             return
+        # When the PC is struggling, a partial only delays the final transcript queued behind it.
+        if self._stt_seconds > PARTIAL_MAX_STT_SECONDS or now - self._last_partial_at < self._stt_seconds * 2:
+            return
         if self._partial_task and not self._partial_task.done():
             return  # Whisper is still busy: skip, do not queue.
         self._last_partial_at = now
@@ -400,6 +436,7 @@ class ConversationEngine:
             await self._return_to_rest()
             return
         stt_ms = (time.perf_counter() - started) * 1000
+        self._stt_seconds = stt_ms / 1000
         text = transcript.text.strip()
 
         if not text:
@@ -620,6 +657,7 @@ class ConversationEngine:
         try:
             while (sentence := await sentences.get()) is not None:
                 await self._synthesize_sentence(response, sentence, cfg.voice)
+            response.speech_done = True
             await self._check_response_complete(response)
             if not response.chunks and not response.finalized:
                 # Nothing could be spoken (model produced no text, or failed).

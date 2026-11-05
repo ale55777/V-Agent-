@@ -192,3 +192,33 @@ REST endpoints are documented at `http://localhost:8000/docs` while running.
 | It interrupts itself | Use headphones, or lower the microphone sensitivity in Settings |
 | It cuts you off mid-sentence | Raise `ECHOAI_VAD_SILENCE_MS` in `.env` (default 750) |
 | Microphone blocked on another device | That needs HTTPS: `start.ps1 -Https` |
+| "No sound is reaching EchoAI from …" | Choose another microphone in Settings, and check it is not muted in Windows |
+| "… does not sound like speech" | Speak closer to the microphone, or choose another one in Settings |
+
+## Progress log
+
+### 2026-11-06: first real-use fixes
+
+The first push worked in automated tests, but failed when tried for real by voice in Chrome. Fixed:
+
+- **Replies cut off after the first sentence.** If the AI finished writing before the next sentence's
+  audio was ready, the reply was treated as finished once the first sentence played, and the rest was
+  dropped. Now a reply only finishes once every sentence has been synthesised, sent and played. A
+  regression test covers this case. Full replies are now spoken and kept in the conversation text.
+- **Replies taking 40 to 130 s.** The main cause was the page itself: one Chrome tab used over two CPU
+  threads, starving speech recognition, which took 14 to 34 s per sentence. Changes:
+  - The orb and waveforms redraw at about 12 fps on a timer instead of 60 fps, and stop while the tab is hidden.
+  - Blur effects (`backdrop-filter`) removed.
+  - Kokoro is now loaded only when first used. On CPUs with 4 threads or fewer, Piper is the default
+    without benchmarking Kokoro. Backend memory went from 561 MB to 308 MB.
+  - Whisper uses greedy decoding (beam size 1).
+  - Live partial transcripts back off automatically when transcription is slow.
+  - Long sentences are split at about 90 characters, so the first audio starts sooner.
+- **No feedback when the mic heard nothing.** The server now reports microphone level and speech
+  probability. If no speech is detected, the page names the microphone in use.
+
+Measured afterwards with the test client and no browser: first audio 2.3 to 3.4 s, barge-in 456 ms, 82
+tests passing. **Not yet measured:** speed in real Chrome after the page changes.
+
+Still to improve: speed in real Chrome, answer quality (the 0.5b model is very small), Urdu, and echo with
+real speakers.

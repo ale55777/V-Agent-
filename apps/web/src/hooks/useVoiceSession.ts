@@ -34,6 +34,8 @@ export function useVoiceSession(onEnded: (sessionId: string) => void) {
   const player = useRef<AudioPlayer | null>(null);
   const micLevel = useRef(0);
   const micOpen = useRef(false);
+  const heardSpeech = useRef(false);
+  const micChecks = useRef(0);
   const session = useRef<string | null>(null);
   const closing = useRef(false);
   const attempts = useRef(0);
@@ -69,6 +71,21 @@ export function useVoiceSession(onEnded: (sessionId: string) => void) {
         setState(event.state);
         if (event.state === "LISTENING") setListeningForResume(false);
         if (event.state === "PAUSED") setListeningForResume(Boolean(event.listening_for_resume));
+        break;
+      case "mic.stats": {
+        // Only until speech is first detected: a quiet room is normal after that.
+        if (heardSpeech.current || ++micChecks.current < 2) break;
+        const name = mic.current?.label ?? "your microphone";
+        setNotice(
+          event.peak < 0.01
+            ? `No sound is reaching EchoAI from “${name}” (level ${event.peak.toFixed(3)}). If you are talking, choose another microphone in Settings, and check it is not muted in Windows.`
+            : `“${name}” picks up sound (level ${event.peak.toFixed(3)}), but it does not sound like speech (${Math.round(event.speech * 100)}%, needs ${Math.round(event.threshold * 100)}%). Speak closer to it, or choose another microphone in Settings.`,
+        );
+        break;
+      }
+      case "speech.started":
+        heardSpeech.current = true;
+        setNotice(null);
         break;
       case "transcript.partial":
         setPartial(event.text);
@@ -207,6 +224,8 @@ export function useVoiceSession(onEnded: (sessionId: string) => void) {
       setState("CONNECTING");
       closing.current = false;
       attempts.current = 0;
+      heardSpeech.current = false;
+      micChecks.current = 0;
       try {
         // Created during the click, because browsers only allow audio after a user gesture.
         const output = new AudioPlayer(
@@ -294,6 +313,9 @@ export function useVoiceSession(onEnded: (sessionId: string) => void) {
 
   const selectMicrophone = useCallback(async (id: string) => {
     device.current = id || undefined;
+    heardSpeech.current = false; // Check the newly chosen microphone from scratch.
+    micChecks.current = 0;
+    setNotice(null);
     if (mic.current) await mic.current.switchDevice(id).catch((e: Error) => setError(e.message));
   }, []);
 

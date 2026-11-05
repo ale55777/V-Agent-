@@ -44,6 +44,11 @@ export class MicCapture {
     source.connect(this.node);
   }
 
+  /** The device the browser actually chose, which may not be the one you expect. */
+  get label(): string {
+    return this.stream?.getAudioTracks()[0]?.label || "your microphone";
+  }
+
   setEnabled(enabled: boolean) {
     this.enabled = enabled;
     this.node?.port.postMessage({ enabled });

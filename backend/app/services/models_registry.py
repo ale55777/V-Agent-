@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 
 import numpy as np
@@ -112,6 +113,11 @@ class ModelRegistry:
             return "piper"
         if "piper" not in self.engines:
             return "kokoro"
+        # Measured on a 2-core laptop CPU: Kokoro only manages 0.7x real time. On a small
+        # machine, skip the benchmark too, because it would load the model just to reject it.
+        if (os.cpu_count() or 1) <= 4:
+            log.info("Using Piper by default on this %s-thread CPU", os.cpu_count())
+            return "piper"
         engine = self.engines["kokoro"]
         started = time.perf_counter()
         samples = np.concatenate(list(engine.synthesize("This is a short speed test.", None)))

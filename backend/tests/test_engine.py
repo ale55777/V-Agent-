@@ -99,7 +99,7 @@ async def h():
 
 async def test_full_turn_streams_text_and_audio_then_saves_played_speech(h):
     await h.speak()
-    await wait_for(lambda: h.of_type("agent.audio.chunk") and h.engine._response and h.engine._response.generation_done)
+    await wait_for(lambda: h.of_type("agent.audio.chunk") and h.engine._response and h.engine._response.speech_done)
     assert h.of_type("speech.started")
     assert h.of_type("speech.ended")
     assert h.of_type("transcript.final")[0]["text"] == "hello there"
@@ -118,6 +118,37 @@ async def test_full_turn_streams_text_and_audio_then_saves_played_speech(h):
     assert h.store.messages[1]["content"] == "Sure thing. Here is an answer for you."
     turn = h.engine.clock.turns[0]
     assert turn["first_audio_ms"] is not None and turn["llm_first_token_ms"] is not None
+
+
+async def test_reply_is_not_cut_off_when_first_sentence_plays_before_the_next_is_ready(h):
+    """Found by a real user: the LLM finishes, sentence one plays, sentence two is still in TTS.
+    The reply used to be treated as finished, dropping everything after the first sentence."""
+    h.chat.reply = "First sentence here. Second sentence here. Third sentence here."
+    gate = threading.Event()
+    original = h.tts.synthesize
+
+    def slow_after_first(text, voice, language="en"):
+        if text.startswith("Second"):
+            gate.wait(10)
+        yield from original(text, voice, language)
+
+    h.tts.synthesize = slow_after_first
+    await h.speak()
+    await wait_for(lambda: h.of_type("agent.audio.chunk"))
+    await wait_for(lambda: h.engine._response.generation_done)
+    h.ack_all()  # The first sentence has fully played; the second is still being synthesised.
+    await settle()
+    assert h.engine._response is not None, "the reply must still be in progress"
+    assert h.engine.state == State.SPEAKING
+    assert not [m for m in h.store.messages if m["speaker"] == "assistant"]
+
+    gate.set()
+    await wait_for(lambda: h.engine._response.speech_done)
+    h.ack_all()
+    await wait_for(lambda: h.engine.state == State.LISTENING)
+    saved = [m for m in h.store.messages if m["speaker"] == "assistant"]
+    assert saved[0]["content"] == "First sentence here. Second sentence here. Third sentence here."
+    assert saved[0]["status"] == "completed"
 
 
 async def test_interruption_stops_response_and_saves_only_played_text(h):
@@ -183,7 +214,7 @@ async def test_echo_of_own_voice_is_discarded(h):
     h.chat.reply = "The capital of France is Paris and it is lovely."
     await h.speak()
     await wait_for(lambda: h.of_type("agent.audio.chunk"))
-    await wait_for(lambda: h.engine._response and h.engine._response.generation_done)
+    await wait_for(lambda: h.engine._response and h.engine._response.speech_done)
     h.ack_all()
     await wait_for(lambda: h.engine.state == State.LISTENING)
     before = len(h.of_type("agent.response.started"))
@@ -192,6 +223,17 @@ async def test_echo_of_own_voice_is_discarded(h):
     await wait_for(lambda: h.of_type("transcript.discarded"))
     assert h.of_type("transcript.discarded")[0]["reason"] == "echo"
     assert len(h.of_type("agent.response.started")) == before
+
+
+async def test_mic_stats_report_level_and_speech_without_audio(h):
+    for _ in range(100):
+        h.engine.feed_audio(QUIET)
+    for _ in range(70):
+        h.engine.feed_audio(LOUD)
+    await wait_for(lambda: h.of_type("mic.stats"))
+    stats = h.of_type("mic.stats")[0]
+    assert stats["peak"] > 0.4 and stats["speech"] > 0.9
+    assert set(stats) == {"v", "type", "peak", "speech", "threshold"}
 
 
 async def test_silence_alone_never_ends_the_session(h):
@@ -299,7 +341,7 @@ async def test_pause_while_speaking_then_resume_generates_continuation(h):
 async def test_repeat_that_speaks_last_reply_without_calling_llm(h):
     h.chat.reply = "Remember this sentence."
     await h.speak()
-    await wait_for(lambda: h.engine._response and h.engine._response.generation_done and h.of_type("agent.audio.chunk"))
+    await wait_for(lambda: h.engine._response and h.engine._response.speech_done and h.of_type("agent.audio.chunk"))
     h.ack_all()
     await wait_for(lambda: h.engine.state == State.LISTENING)
     calls = len(h.chat.prompts)

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Iterator, Protocol
 
@@ -51,24 +52,40 @@ class KokoroEngine:
     URDU_VOICE = "hf_alpha"
 
     def __init__(self, models_dir: Path, threads: int = 2, default_voice: str = "af_heart") -> None:
-        os.environ.setdefault("ONNX_NUM_THREADS", str(threads))
-        import onnxruntime as ort
-        from kokoro_onnx import Kokoro
-
-        directory = models_dir / "kokoro"
-        options = ort.SessionOptions()
-        options.intra_op_num_threads = threads
-        options.inter_op_num_threads = 1
-        session = ort.InferenceSession(
-            str(directory / KOKORO_MODEL), sess_options=options, providers=["CPUExecutionProvider"]
-        )
-        self._kokoro = Kokoro.from_session(session, str(directory / KOKORO_VOICES))
+        self._directory = models_dir / "kokoro"
+        for name in (KOKORO_MODEL, KOKORO_VOICES):
+            if not (self._directory / name).exists():
+                raise FileNotFoundError(f"{name} has not been downloaded")
+        self._threads = threads
+        self._loaded = None
+        self._lock = threading.Lock()
         self.default_voice = default_voice
         self.name = "kokoro-82m/int8"
 
+    @property
+    def _kokoro(self):
+        """Loaded on first use. It takes hundreds of MB, which a PC where Piper is the
+        default cannot spare for a voice it may never use."""
+        with self._lock:
+            if self._loaded is None:
+                os.environ.setdefault("ONNX_NUM_THREADS", str(self._threads))
+                import onnxruntime as ort
+                from kokoro_onnx import Kokoro
+
+                options = ort.SessionOptions()
+                options.intra_op_num_threads = self._threads
+                options.inter_op_num_threads = 1
+                session = ort.InferenceSession(
+                    str(self._directory / KOKORO_MODEL), sess_options=options, providers=["CPUExecutionProvider"]
+                )
+                self._loaded = Kokoro.from_session(session, str(self._directory / KOKORO_VOICES))
+            return self._loaded
+
     def voices(self) -> list[dict]:
         out = []
-        for voice in sorted(self._kokoro.get_voices()):
+        with np.load(self._directory / KOKORO_VOICES) as archive:  # Names only; no model load.
+            names = sorted(archive.files)
+        for voice in names:
             prefix = voice[0]
             if prefix not in self._LANG_BY_PREFIX:
                 continue

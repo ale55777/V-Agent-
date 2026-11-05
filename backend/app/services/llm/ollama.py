@@ -149,9 +149,10 @@ _ABBREVIATIONS = re.compile(r"(?:\b(?:Mr|Mrs|Ms|Dr|St|vs|etc|e\.g|i\.e)|\b[A-Z]|
 class SentenceChunker:
     """Splits streaming tokens into speakable pieces."""
 
-    def __init__(self, first_clause_chars: int = 24, clause_chars: int = 70) -> None:
+    def __init__(self, first_clause_chars: int = 24, clause_chars: int = 70, max_chars: int = 90) -> None:
         self.first_clause_chars = first_clause_chars
         self.clause_chars = clause_chars
+        self.max_chars = max_chars
         self._buffer = ""
         self._emitted = 0
 
@@ -175,6 +176,12 @@ class SentenceChunker:
             for match in _CLAUSE_END.finditer(self._buffer):
                 if match.start() >= limit // 2:
                     return self._take(match.end())
+        # A long sentence with no punctuation still starts speaking, between two words,
+        # rather than making the user wait for all of it on a slow machine.
+        if len(self._buffer) >= self.max_chars:
+            cut = self._buffer.rfind(" ")
+            if cut > 0:
+                return self._take(cut + 1)
         return None
 
     def _take(self, end: int) -> str | None:
