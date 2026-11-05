@@ -1,0 +1,26 @@
+# PostgreSQL for EchoAI. Bound to loopback so it is never reachable from the LAN or internet.
+name: echoai
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-echoai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup.ps1 to create .env}
+      POSTGRES_DB: ${POSTGRES_DB:-echoai}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    # Tuned for a small machine: this leaves the RAM for the AI models.
+    command: >
+      postgres -c shared_buffers=64MB -c max_connections=30 -c work_mem=4MB -c effective_cache_size=256MB
+    mem_limit: 256m
+    volumes:
+      - echoai-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-echoai} -d ${POSTGRES_DB:-echoai}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  echoai-pgdata:

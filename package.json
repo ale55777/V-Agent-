@@ -1,0 +1,11 @@
+{
+  "name": "echoai",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": ["apps/web", "packages/*"],
+  "scripts": {
+    "build:web": "npm run build --workspace apps/web",
+    "dev:web": "npm run dev --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace apps/web"
+  }
+}
