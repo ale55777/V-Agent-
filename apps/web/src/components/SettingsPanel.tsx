@@ -66,6 +66,7 @@ export function SettingsPanel({ onClose, live, send, onMicrophone, onVolume }: P
           personality: changes.personality,
           attention_mode: changes.attention_mode,
           wake_word: changes.wake_word,
+          ai_engine: changes.ai_engine,
         });
       }
     } catch (error) {
@@ -160,7 +161,32 @@ export function SettingsPanel({ onClose, live, send, onMicrophone, onVolume }: P
               </select>
             </Field>
 
-            <Field label="AI model" help={models?.llm_error ? `Ollama: ${models.llm_error}` : "Models installed in Ollama."}>
+            <Field
+              label="AI engine"
+              help={
+                !models?.groq_available
+                  ? "Groq is off: add ECHOAI_GROQ_API_KEY to .env and restart to enable it."
+                  : settings.ai_engine === "groq"
+                    ? `Your voice and messages are sent to Groq (${models.groq_models?.stt}, ${models.groq_models?.llm}). Voice output stays on this PC. If Groq fails, the local models answer instead.`
+                    : "Everything stays on this PC."
+              }
+            >
+              <select
+                className="field"
+                value={settings.ai_engine ?? "local"}
+                onChange={(e) => void update({ ai_engine: e.target.value as AgentSettings["ai_engine"] })}
+              >
+                <option value="local">Local (private)</option>
+                <option value="groq" disabled={!models?.groq_available}>
+                  Groq (fast, online)
+                </option>
+              </select>
+            </Field>
+
+            <Field
+              label={settings.ai_engine === "groq" ? "Local AI model (fallback)" : "AI model"}
+              help={models?.llm_error ? `Ollama: ${models.llm_error}` : "Models installed in Ollama."}
+            >
               <select
                 className="field"
                 value={settings.selected_llm ?? models?.default_llm ?? ""}

@@ -15,6 +15,8 @@ export interface ModelsInfo {
   llm_error: string | null;
   default_llm: string;
   tts: { active: string | null; engines: string[] };
+  groq_available: boolean;
+  groq_models: { stt: string; llm: string } | null;
 }
 
 export class EchoApi {

@@ -158,12 +158,13 @@ async def _create_live(registry, settings: Settings, session: ConversationSessio
     tts = registry.tts_for(agent.selected_tts if agent else None)
     clock = SessionClock(active_seconds=session.active_duration or 0.0, paused_seconds=session.paused_duration or 0.0)
     vad = await asyncio.to_thread(registry.new_vad)
+    recognizer, chat_model = registry.pipeline(agent.ai_engine if agent else None)
     engine = ConversationEngine(
         session_id=session.id,
         config=config,
         vad_model=vad,
-        recognizer=registry.recognizer,
-        chat_model=registry.llm,
+        recognizer=recognizer,
+        chat_model=chat_model,
         tts=tts,
         store=store,
         history=history,
@@ -171,7 +172,7 @@ async def _create_live(registry, settings: Settings, session: ConversationSessio
     )
     if "kokoro" in registry.engines:
         engine.tts_by_language["ur"] = registry.engines["kokoro"]
-    metadata = {"llm": config.llm_model, "stt": registry.recognizer.name, "tts": tts.name}
+    metadata = {"llm": getattr(chat_model, "name", config.llm_model), "stt": recognizer.name, "tts": tts.name}
     return LiveSession(engine, store, user_id, metadata, registry)
 
 
@@ -338,7 +339,13 @@ async def _configure(data: dict, live: LiveSession) -> None:
             engine.tts = registry.engines[match["engine"]]
             live.metadata["tts"] = engine.tts.name
     if model := data.get("llm_model"):
-        live.metadata["llm"] = model
+        if engine.chat_model is live.registry.llm:
+            live.metadata["llm"] = model
+    if ai_engine := data.get("ai_engine"):
+        engine.recognizer, engine.chat_model = live.registry.pipeline(ai_engine)
+        live.metadata["stt"] = engine.recognizer.name
+        live.metadata["llm"] = getattr(engine.chat_model, "name", None) or engine.config.llm_model
+        changes["ai_engine"] = ai_engine
     await engine.emit("session.configured", changes=[*changes], models=live.metadata)
 
 

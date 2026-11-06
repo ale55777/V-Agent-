@@ -70,7 +70,7 @@ export type ClientMessage =
   | { type: "session.pause"; listen_for_resume?: boolean }
   | { type: "session.resume" }
   | { type: "session.end" }
-  | { type: "session.configure"; language?: Language; voice?: string; llm_model?: string; personality?: string; attention_mode?: AttentionMode; wake_word?: string }
+  | { type: "session.configure"; language?: Language; voice?: string; llm_model?: string; personality?: string; attention_mode?: AttentionMode; wake_word?: string; ai_engine?: AiEngine }
   | { type: "ping"; t: number };
 
 /** WebSocket close codes the client must treat as final rather than reconnecting. */
@@ -79,6 +79,9 @@ export const CloseCode = { UNAUTHORIZED: 4401, FORBIDDEN: 4403, REPLACED: 4408, 
 /** Agent audio frame: 12-byte header (uint32le responseSeq, chunkSeq, sampleRate) + PCM16 mono. */
 export const AUDIO_HEADER_BYTES = 12;
 export const MIC_SAMPLE_RATE = 16000;
+
+/** "local" runs on this PC; "groq" sends audio and text to Groq's servers (opt-in). */
+export type AiEngine = "local" | "groq";
 
 export interface AgentSettings {
   selected_llm: string | null;
@@ -91,6 +94,7 @@ export interface AgentSettings {
   personality: string;
   wake_word: string;
   retention_days: number | null;
+  ai_engine: AiEngine;
 }
 
 export interface Voice { id: string; label: string; engine: string; language: string }

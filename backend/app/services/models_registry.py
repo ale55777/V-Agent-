@@ -10,6 +10,7 @@ import numpy as np
 
 from app.config.settings import Settings
 from app.services.asr.whisper import WhisperRecognizer
+from app.services.groq import Cooldown, FallbackChat, FallbackRecognizer, GroqChat, GroqRecognizer
 from app.services.llm.ollama import OllamaClient
 from app.services.tts.engines import KokoroEngine, PiperEngine
 from app.services.vad.silero import SileroVAD
@@ -30,6 +31,28 @@ class ModelRegistry:
             "llm": {"state": "pending"},
         }
         self.ready = asyncio.Event()
+        # Built only when a Groq key is configured; see groq_available.
+        self.groq_recognizer: FallbackRecognizer | None = None
+        self.groq_chat: FallbackChat | None = None
+
+    @property
+    def groq_available(self) -> bool:
+        return self.groq_chat is not None
+
+    def pipeline(self, ai_engine: str | None) -> tuple:
+        """(speech recogniser, chat model) for a session. "groq" falls back to local when no key is set."""
+        if ai_engine == "groq" and self.groq_chat is not None:
+            return self.groq_recognizer, self.groq_chat
+        return self.recognizer, self.llm
+
+    def _build_groq(self) -> None:
+        s = self.settings
+        if not s.groq_api_key.strip():
+            return
+        cooldown = Cooldown(s.groq_retry_after_seconds)  # Shared: no internet affects both.
+        self.groq_recognizer = FallbackRecognizer(GroqRecognizer(s), self.recognizer, cooldown)
+        self.groq_chat = FallbackChat(GroqChat(s), self.llm, cooldown)
+        self.status["groq"] = {"state": "ready", "detail": f"{s.groq_stt_model} + {s.groq_llm_model}"}
 
     def new_vad(self) -> SileroVAD:
         # Silero is stateful, so each session gets its own instance.
@@ -59,6 +82,7 @@ class ModelRegistry:
                 log.exception("Failed to load %s", key)
                 self.status[key] = {"state": "failed", "detail": str(exc)}
         await self._warm_llm()
+        self._build_groq()
         self.ready.set()
 
     async def _warm_llm(self) -> None:

@@ -39,6 +39,7 @@ class AgentSettingsBody(BaseModel):
     personality: str = Field(default="", max_length=1000)
     wake_word: str = Field(default="echo", min_length=2, max_length=40)
     retention_days: int | None = Field(default=None, ge=1, le=3650)
+    ai_engine: Literal["local", "groq"] = "local"
 
 
 class SessionCreate(BaseModel):

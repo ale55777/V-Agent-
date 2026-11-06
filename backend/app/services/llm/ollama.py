@@ -17,6 +17,7 @@ SYSTEM_TEMPLATE = """You are EchoAI, a voice assistant having a live spoken conv
 Rules:
 - Your words are read aloud, so write plain sentences. Never use lists, markdown, code or emoji.
 - Reply in one to three short sentences unless the user asks for more detail.
+- Always give a complete answer in full sentences. Never reply with a single word or a fragment.
 - Do not greet the user again or repeat what they just said. Get straight to the answer.
 - Use the conversation so far to understand follow-up questions.
 - If you do not know something, say so plainly. Never invent facts.
@@ -41,6 +42,34 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 3)
 
 
+# An interrupted reply shorter than this is left out of the prompt entirely.
+MIN_INTERRUPTED_WORDS = 6
+
+
+def clean_history(history: list[dict]) -> list[dict]:
+    """Turn the saved conversation into a prompt the model will not learn bad habits from.
+
+    Measured 2026-11-06: once a few replies had been cut off by the mic ("Hey,", "I"),
+    the model copied them and answered every later question with one word. So cut-off
+    fragments are dropped, longer cut-off replies are marked unfinished, and several user
+    turns in a row (the user repeating themselves while no answer came) become one.
+    """
+    cleaned: list[dict] = []
+    for message in history:
+        role, content = message["role"], message["content"].strip()
+        if not content:
+            continue
+        if role == "assistant" and message.get("interrupted"):
+            if len(content.split()) < MIN_INTERRUPTED_WORDS:
+                continue
+            content = content.rstrip(" ,;:-") + "..."
+        if cleaned and cleaned[-1]["role"] == role:
+            cleaned[-1]["content"] += " " + content
+        else:
+            cleaned.append({"role": role, "content": content})
+    return cleaned
+
+
 def build_messages(
     history: list[dict], personality: str, language: str, num_ctx: int, reserve_for_reply: int
 ) -> list[dict]:
@@ -49,6 +78,7 @@ def build_messages(
     The oldest turns are dropped first. The system prompt and the latest user turn
     are always kept, so a long conversation degrades gracefully instead of failing.
     """
+    history = clean_history(history)
     system = SYSTEM_TEMPLATE.format(
         personality=personality.strip() or DEFAULT_PERSONALITY,
         language_rule=LANGUAGE_RULES.get(language, LANGUAGE_RULES["en"]),

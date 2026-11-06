@@ -120,6 +120,7 @@ def _agent_dict(agent: AgentSettings) -> dict:
         personality=agent.personality,
         wake_word=agent.wake_word,
         retention_days=agent.retention_days,
+        ai_engine=agent.ai_engine or "local",
     ).model_dump()
 
 
@@ -158,6 +159,11 @@ async def available_models(request: Request, _: User = Depends(current_user)) ->
         "stt": {"active": settings.stt_model, "options": ["tiny", "base", "small"]},
         "tts": {"active": engine.name if engine else None, "engines": list(registry.engines)},
         "status": registry.status,
+        "groq_available": getattr(registry, "groq_available", False),
+        "groq_models": (
+            {"stt": settings.groq_stt_model, "llm": settings.groq_llm_model}
+            if getattr(registry, "groq_available", False) else None
+        ),
     }
 
 

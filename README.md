@@ -222,3 +222,37 @@ tests passing. **Not yet measured:** speed in real Chrome after the page changes
 
 Still to improve: speed in real Chrome, answer quality (the 0.5b model is very small), Urdu, and echo with
 real speakers.
+
+### 2026-11-06: optional Groq engine
+
+Settings now has an **AI engine** choice: **Local (private)**, the default, or **Groq (fast, online)**.
+Groq is offered only when `ECHOAI_GROQ_API_KEY` is set in `.env` (free key at https://console.groq.com/keys).
+
+- With Groq, speech-to-text (`whisper-large-v3-turbo`) and the chat model (`qwen/qwen3.8-27b`) run on
+  Groq's servers, so **your audio and messages leave this PC**. Voice output stays local (Piper).
+- If Groq fails (no internet, rate limit, timeout), the same turn is answered by the local models, and
+  Groq is skipped for 60 s before it is tried again. A reply that fails halfway is not restarted locally,
+  so nothing is spoken twice.
+- Live partial transcripts are off in Groq mode, to save the free rate limit and the CPU.
+- The choice can be changed during a session. Migration `0002` adds the setting to the database.
+
+Measured on this PC (3.3 s spoken clip, CPU otherwise idle): speech-to-text 912 ms locally vs 240 to
+370 ms on Groq; first chat token about 500 ms locally vs 90 to 230 ms on Groq. `gpt-oss-20b` was also
+tried and was slower to answer (about 500 ms), because it reasons before replying.
+
+### 2026-11-06: one-word answers fixed
+
+In real use with Groq, replies came out as "I", "I'm" or "Yes". Cause, found from the saved conversation:
+the mic sensitivity slider was near 95%, so noise and the agent's own voice from the speakers counted as
+the user interrupting. Cut-off fragments ("Hey,", "I") were saved into the conversation, and the model
+copied them: replaying that history, Groq returned a single token and stopped. Fixed:
+
+- Cut-off replies under 6 words are no longer shown to the model, longer ones are marked unfinished, and
+  several user turns in a row become one. Replaying the broken conversation now gives full answers.
+- The system prompt asks for complete sentences, never a single word.
+- Interrupting needs a speech probability of at least 0.7, however high the sensitivity slider is.
+- Echo filter: transcripts of 3 words or fewer must match the agent's words exactly ("end conversation"
+  was being discarded as an echo of "voice conversation"), and only speech that started while the agent
+  was audible, or within 1 s after, is checked for echo at all.
+
+Groq end-to-end test after the fixes: passed twice in a row, first audio median 0.8 to 0.96 s.

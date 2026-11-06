@@ -171,6 +171,9 @@ def test_echo_detection():
     assert not is_echo("tell me about Germany instead", spoken)
     assert not is_echo("Paris", spoken), "a single word is not enough evidence"
     assert not is_echo("anything", "")
+    # Short commands need an exact match: this was once discarded as echo.
+    assert not is_echo("End conversation.", "I can't tell long stories in a voice conversation.")
+    assert is_echo("voice conversation", "I can't tell long stories in a voice conversation.")
 
 
 def test_unfinished_speech_waits_longer():
@@ -238,3 +241,31 @@ def test_clock_aggregates_turns():
     assert snapshot["minimum_latency_ms"] == 1000
     assert snapshot["maximum_latency_ms"] == 3000
     assert np.isclose(snapshot["average_transcription_ms"], 200)
+
+
+def test_cut_off_fragments_do_not_teach_the_model_short_replies():
+    from app.services.llm.ollama import clean_history
+
+    history = [
+        {"role": "user", "content": "Hello?"},
+        {"role": "assistant", "content": "Hey,", "interrupted": True},
+        {"role": "user", "content": "Are you an AI?"},
+        {"role": "user", "content": "Answer me."},
+        {"role": "assistant", "content": "Yes, I am an AI voice assistant that runs", "interrupted": True},
+        {"role": "user", "content": "Go on."},
+    ]
+    assert clean_history(history) == [
+        {"role": "user", "content": "Hello? Are you an AI? Answer me."},
+        {"role": "assistant", "content": "Yes, I am an AI voice assistant that runs..."},
+        {"role": "user", "content": "Go on."},
+    ]
+    # Only role and content reach the model: Groq rejects unknown message fields.
+    messages = build_messages(history, "", "en", 2048, 160)
+    assert all(set(m) == {"role", "content"} for m in messages)
+
+
+def test_interrupting_stays_hard_at_high_sensitivity():
+    from app.services.vad.silero import VadConfig
+
+    assert VadConfig.from_sensitivity(0.95).interrupt_threshold >= 0.7
+    assert VadConfig.from_sensitivity(0.5).interrupt_threshold == 0.75

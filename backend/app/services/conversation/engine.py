@@ -49,6 +49,8 @@ WAKE_WINDOW_SECONDS = 20.0
 LAG_WARNING_FRAMES = 16  # about half a second behind real time
 MIC_REPORT_FRAMES = 156  # about every 5 seconds
 PARTIAL_MAX_STT_SECONDS = 3.0
+# Room echo and the browser's audio buffer outlast the agent's voice by a moment.
+ECHO_TAIL_SECONDS = 1.0
 
 
 class State(str, Enum):
@@ -187,6 +189,10 @@ class ConversationEngine:
         self._carry_audio = b""
         self._paused_response_text = ""
         self._last_spoken_text = ""
+        # When the client will finish playing what has been sent, and when the user last
+        # started talking. Speech is only checked for echo if it overlapped the agent's voice.
+        self._speaking_until = 0.0
+        self._speech_started_at = 0.0
         self._mic_muted_by_pause = False
         self._paused = False
         self._mic_peak = 0.0
@@ -341,6 +347,7 @@ class ConversationEngine:
         await self.emit("speech.started")
         started = time.perf_counter()
         self._last_partial_at = started
+        self._speech_started_at = started
         if self.state == State.PAUSED:
             return
         if self._response is not None:
@@ -393,6 +400,8 @@ class ConversationEngine:
             return
         if self._partial_task and not self._partial_task.done():
             return  # Whisper is still busy: skip, do not queue.
+        if not getattr(self.recognizer, "partials", True):
+            return  # The online engine only transcribes finished utterances.
         self._last_partial_at = now
         self._partial_task = asyncio.create_task(self._partial(self._segmenter.current_audio()))
 
@@ -445,7 +454,8 @@ class ConversationEngine:
             return
 
         # Echo of our own voice: discard it rather than answering ourselves.
-        if self._last_spoken_text and is_echo(text, self._last_spoken_text):
+        overlapped = self._speech_started_at <= self._speaking_until + ECHO_TAIL_SECONDS
+        if overlapped and self._last_spoken_text and is_echo(text, self._last_spoken_text):
             await self.emit("transcript.discarded", reason="echo", text=text)
             await self._return_to_rest()
             return
@@ -694,6 +704,7 @@ class ConversationEngine:
         response.next_audio_seq += 1
         response.chunks[chunk.seq] = chunk
         self._last_spoken_text = f"{self._last_spoken_text} {sentence}"[-1200:]
+        self._speaking_until = max(self._speaking_until, time.perf_counter()) + duration_ms / 1000
 
         if response.metrics and response.metrics.first_audio_ms is None:
             response.metrics.first_audio_ms = (time.perf_counter() - response.metrics.speech_end) * 1000
@@ -752,7 +763,7 @@ class ConversationEngine:
         if spoken:
             status = "interrupted" if unplayed_exists else "completed"
             message = await self.store.save_message("assistant", spoken, status, response.id)
-            self.history.append({"role": "assistant", "content": spoken})
+            self.history.append({"role": "assistant", "content": spoken, "interrupted": unplayed_exists})
         if response.metrics:
             self.clock.record_turn(response.metrics, interrupted=interrupted)
         await self.emit(

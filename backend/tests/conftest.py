@@ -126,6 +126,11 @@ class FakeRegistry:
         self.llm = FakeLLM()
         self.engines = {"scripted": ScriptedTTS()}
 
+    groq_available = False
+
+    def pipeline(self, ai_engine):
+        return self.recognizer, self.llm
+
     def new_vad(self):
         return ScriptedVAD()
 

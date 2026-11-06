@@ -170,10 +170,10 @@ async def test_interruption_stops_response_and_saves_only_played_text(h):
     assert saved["content"] == "One two three four"  # half of the 8-word first chunk, nothing after it
     assert h.engine.clock.interruption_count == 1
     assert h.of_type("agent.response.started")[1]["response_seq"] == 2
-    # The new prompt carries the interrupted context plus the new question.
+    # The 4-word cut-off fragment is kept out of the prompt, so the two user turns join.
     last_prompt = h.chat.prompts[-1]
-    assert last_prompt[-1]["content"] == "wait explain it simply"
-    assert "One two three four" in last_prompt[-2]["content"]
+    assert last_prompt[-1]["content"] == "hello there wait explain it simply"
+    assert all("One two three four" not in m["content"] for m in last_prompt)
 
 
 async def test_repeated_interruptions_never_leave_a_stale_active_response(h):
@@ -432,7 +432,9 @@ async def test_disconnect_finalizes_played_text_and_session_can_reattach(h):
     h.stt.queue = ["are you still there"]
     await h.speak()
     await wait_for(lambda: len(h.of_type("agent.response.started")) == 2)
-    assert h.chat.prompts[-1][-2]["content"] == "One two three four."
+    # The played part is remembered, but a fragment this short is not shown to the model.
+    assert {"role": "assistant", "content": "One two three four.", "interrupted": True} in h.engine.history
+    assert all("One two three four" not in m["content"] for m in h.chat.prompts[-1])
 
 
 async def test_previous_history_seeds_context_when_continuing_a_conversation():

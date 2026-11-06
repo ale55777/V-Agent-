@@ -76,7 +76,12 @@ class SessionStore:
                 )
             ).scalars()
             return [
-                {"role": "user" if m.speaker == "user" else "assistant", "content": m.content} for m in rows
+                {
+                    "role": "user" if m.speaker == "user" else "assistant",
+                    "content": m.content,
+                    "interrupted": m.status == "interrupted",
+                }
+                for m in rows
             ]
 
     async def save_metrics(self, clock: SessionClock, model_metadata: dict, end: bool = False) -> None:

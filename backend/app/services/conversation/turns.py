@@ -90,6 +90,10 @@ def is_echo(transcript: str, spoken_text: str, threshold: float = 0.72) -> bool:
         return False  # One word is never enough evidence to discard real speech.
     if heard in spoken and len(heard_words) >= 3:
         return True
+    if len(heard_words) <= 3:
+        # Too short for fuzzy matching: "end conversation" scored 0.82 against the agent's
+        # "voice conversation" and the user's command was thrown away. Exact words only.
+        return f" {heard} " in f" {spoken} "
     # Compare against the same-length window of agent speech that matches best.
     size = len(heard_words)
     best = 0.0

@@ -71,7 +71,9 @@ class VadConfig:
         """Map a 0..1 sensitivity slider to a probability threshold (higher = more sensitive)."""
         sensitivity = min(max(sensitivity, 0.0), 1.0)
         threshold = round(0.8 - 0.6 * sensitivity, 3)
-        interrupt = round(min(threshold + 0.25, 0.95), 3)
+        # Interrupting stays hard however sensitive the slider is: on laptop speakers the
+        # agent's own voice reaches the mic, and a low bar let it cut itself off mid-word.
+        interrupt = round(min(max(threshold + 0.25, 0.7), 0.95), 3)
         return cls(threshold=threshold, interrupt_threshold=interrupt, **overrides)
 
 

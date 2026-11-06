@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     kokoro_voice: str = "af_heart"
     piper_voice: str = "en_US-lessac-low"
 
+    # Optional online engine (Groq). Off unless a key is set AND a user picks it in Settings.
+    # It sends that user's audio and text to Groq; the local models remain the fallback.
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_stt_model: str = "whisper-large-v3-turbo"
+    # Measured 2026-11-06: about 90 ms to first token, versus about 500 ms for gpt-oss-20b,
+    # which reasons before answering.
+    groq_llm_model: str = "qwen/qwen3.8-27b"
+    groq_timeout_seconds: float = 8.0
+    # After a failure, stay on the local models this long before trying Groq again.
+    groq_retry_after_seconds: float = 60.0
+
     # Voice activity / turn taking (defaults; per-user settings override some)
     vad_threshold: float = 0.5
     vad_interrupt_threshold: float = 0.75

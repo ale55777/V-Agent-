@@ -5,7 +5,7 @@ and confirms playback at real-time pace. The user's "voice" is synthesised with 
 so transcripts and replies are genuine output from Whisper and Qwen. Nothing is scripted.
 Its temporary user and data are deleted at the end.
 
-Usage: python scripts/e2e_voice_test.py [--base http://127.0.0.1:8000]
+Usage: python scripts/e2e_voice_test.py [--base http://127.0.0.1:8000] [--engine local|groq]
 """
 from __future__ import annotations
 
@@ -139,6 +139,8 @@ class Client:
                 remaining = deadline - time.perf_counter()
                 if remaining <= 0:
                     seen = [e["type"] for _, e in self.events[since:]]
+                    detail = [e for _, e in self.events[since:] if e["type"] in ("transcript.discarded", "error", "speech.ended")]
+                    print(f"  Details: {detail}")
                     raise TimeoutError(f"Timed out. Events seen: {seen}")
                 try:
                     await asyncio.wait_for(self.condition.wait(), remaining)
@@ -252,7 +254,7 @@ async def scenario(client: Client, api: httpx.AsyncClient, session_id: str, resu
     results["first_audio_median_ms"] = statistics.median(latencies)
 
 
-async def run(base: str) -> int:
+async def run(base: str, engine: str = "local") -> int:
     settings = get_settings()
     voice = PiperEngine(settings.models_dir, settings.piper_voice)
     email = f"e2e-{uuid.uuid4().hex[:10]}@example.com"
@@ -260,6 +262,9 @@ async def run(base: str) -> int:
     async with httpx.AsyncClient(base_url=base, timeout=60, verify=False) as api:
         token = (await api.post("/api/v1/auth/register", json={"email": email, "password": "e2e-test-password"})).json()["access_token"]
         api.headers["Authorization"] = f"Bearer {token}"
+        saved = (await api.get("/api/v1/agent/settings")).json()
+        await api.put("/api/v1/agent/settings", json={**saved, "ai_engine": engine})
+        print(f"AI engine: {engine}")
         session_id = (await api.post("/api/v1/sessions", json={})).json()["id"]
         try:
             url = base.replace("http", "ws", 1) + "/ws/v1/voice"
@@ -324,4 +329,6 @@ async def delete_user(email: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
-    raise SystemExit(asyncio.run(run(parser.parse_args().base)))
+    parser.add_argument("--engine", choices=("local", "groq"), default="local")
+    args = parser.parse_args()
+    raise SystemExit(asyncio.run(run(args.base, args.engine)))

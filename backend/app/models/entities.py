@@ -48,6 +48,8 @@ class AgentSettings(Base):
     personality: Mapped[str] = mapped_column(Text, default="")
     wake_word: Mapped[str] = mapped_column(String(40), default="echo")
     retention_days: Mapped[int | None] = mapped_column(Integer)
+    # "local" keeps everything on this PC. "groq" sends audio and text to Groq (opt-in).
+    ai_engine: Mapped[str] = mapped_column(String(10), default="local", server_default="local")
 
     user: Mapped[User] = relationship(back_populates="settings")
 

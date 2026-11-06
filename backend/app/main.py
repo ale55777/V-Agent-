@@ -31,6 +31,9 @@ async def lifespan(app: FastAPI):
     await hub.close_all()
     loader.cancel()
     await registry.llm.close()
+    if registry.groq_chat is not None:
+        await registry.groq_chat.primary.close()
+        registry.groq_recognizer.primary.close()
 
 
 def create_app() -> FastAPI:
