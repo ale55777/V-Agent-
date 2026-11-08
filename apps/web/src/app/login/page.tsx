@@ -32,14 +32,16 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-dvh place-items-center p-4">
-      <form onSubmit={submit} className="glass w-full max-w-sm space-y-4 rounded-2xl p-6">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-accent to-speak text-white">
-            <AudioLines size={20} aria-hidden />
+      <form onSubmit={submit} className="glass w-full max-w-sm animate-rise space-y-4 rounded-3xl p-7">
+        <div className="flex flex-col items-center gap-3 pb-2 text-center">
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-accent to-speak text-white shadow-[0_10px_40px_-8px_rgba(124,108,255,0.9)]">
+            <AudioLines size={26} aria-hidden />
           </span>
           <div>
-            <h1 className="font-semibold">EchoAI</h1>
-            <p className="text-xs text-slate-400">Your voice assistant, running on your own PC</p>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Echo<span className="text-gradient">AI</span>
+            </h1>
+            <p className="mt-1 text-sm text-slate-400">Talk naturally. Interrupt any time.</p>
           </div>
         </div>
         <label className="block space-y-1.5">

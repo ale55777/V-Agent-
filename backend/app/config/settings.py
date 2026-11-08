@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     # Optional online engine (Groq). Off unless a key is set AND a user picks it in Settings.
     # It sends that user's audio and text to Groq; the local models remain the fallback.
     groq_api_key: str = ""
+    # "groq" makes every session use Groq whatever the user picked: a cloud host has no Ollama.
+    ai_engine_override: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_stt_model: str = "whisper-large-v3-turbo"
     # Measured 2026-11-06: about 90 ms to first token, versus about 500 ms for gpt-oss-20b,
@@ -69,7 +71,7 @@ class Settings(BaseSettings):
     vad_interrupt_threshold: float = 0.75
     vad_min_speech_ms: int = 160
     vad_interrupt_min_speech_ms: int = 280
-    vad_silence_ms: int = 750
+    vad_silence_ms: int = 500
     vad_max_silence_ms: int = 1800
     vad_padding_ms: int = 192
     max_utterance_seconds: int = 30

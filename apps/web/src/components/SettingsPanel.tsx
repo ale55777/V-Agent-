@@ -26,6 +26,23 @@ function Field({ label, help, children }: { label: string; help?: string; childr
   );
 }
 
+/**
+ * Until the page has microphone permission, browsers report one nameless device however many
+ * exist, so permission is asked for first when that is what comes back. Chrome's "default" and
+ * "communications" entries only repeat real devices, and "System default" already covers them.
+ */
+async function listMicrophones(): Promise<MediaDeviceInfo[]> {
+  const inputs = async () =>
+    (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+  let found = await inputs();
+  if (found.every((d) => !d.label)) {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+    stream?.getTracks().forEach((track) => track.stop());
+    found = await inputs();
+  }
+  return found.filter((d) => d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications");
+}
+
 export function SettingsPanel({ onClose, live, send, onMicrophone, onVolume }: Props) {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [voices, setVoices] = useState<Voice[]>([]);
@@ -39,9 +56,16 @@ export function SettingsPanel({ onClose, live, send, onMicrophone, onVolume }: P
     api().settings().then(setSettings).catch((e) => setMessage(e.message));
     api().voices().then((v) => setVoices(v.voices)).catch(() => undefined);
     api().models().then(setModels).catch(() => undefined);
-    navigator.mediaDevices?.enumerateDevices().then((devices) =>
-      setMicrophones(devices.filter((d) => d.kind === "audioinput")),
-    );
+    const media = navigator.mediaDevices;
+    if (!media) return;
+    let open = true;
+    const refresh = () => listMicrophones().then((found) => open && setMicrophones(found));
+    void refresh();
+    media.addEventListener("devicechange", refresh); // A headset was plugged in or removed.
+    return () => {
+      open = false;
+      media.removeEventListener("devicechange", refresh);
+    };
   }, []);
 
   useEffect(() => {

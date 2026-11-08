@@ -182,6 +182,7 @@ class ConversationEngine:
         self._response_tasks: list[asyncio.Task] = []
         self._response_seq = 0
         self._utterance_task: asyncio.Task | None = None
+        self._user_save: asyncio.Task | None = None
         self._partial_task: asyncio.Task | None = None
         self._last_partial_at = 0.0
         self._speech_ended_at = 0.0
@@ -236,6 +237,11 @@ class ConversationEngine:
         self.state = State.ENDED
 
     async def emit(self, event_type: str, **payload) -> None:
+        if event_type in ("agent.interrupted", "transcript.discarded", "agent.response.completed"):
+            log.info(
+                "%s %s", event_type,
+                {k: payload[k] for k in ("reason", "interrupted") if k in payload},
+            )
         if self._send_json is None:
             return
         try:
@@ -329,6 +335,16 @@ class ConversationEngine:
             "Mic: peak level %.4f, highest speech probability %.2f (needs %.2f), state %s",
             peak, speech, self.config.vad.threshold, self.state.value,
         )
+        seg = self._segmenter
+        if seg.guarded_peak > 0:
+            vad = self.config.vad
+            log.info(
+                "Barge-in check while speaking: highest probability %.2f (needs %.2f), "
+                "longest run %d ms (needs %d), in speech %s, response active %s",
+                seg.guarded_peak, vad.interrupt_threshold, seg.guarded_best_run_ms,
+                vad.interrupt_min_speech_ms, seg.in_speech, self._response is not None,
+            )
+            seg.guarded_peak = seg.guarded_best_run_ms = 0.0
         await self.emit("mic.stats", peak=round(peak, 4), speech=round(speech, 3), threshold=self.config.vad.threshold)
 
     def _score_frames(self, frames: list[bytes]) -> list[float]:
@@ -348,6 +364,7 @@ class ConversationEngine:
         started = time.perf_counter()
         self._last_partial_at = started
         self._speech_started_at = started
+        log.info("Speech started in state %s, response active %s", self.state.value, self._response is not None)
         if self.state == State.PAUSED:
             return
         if self._response is not None:
@@ -504,11 +521,23 @@ class ConversationEngine:
             await self._run_command(command)
             return
 
-        message = await self.store.save_message("user", text, "completed", None)
         self.history.append({"role": "user", "content": text})
-        await self.emit("transcript.final", text=text, message=message, stt_ms=round(stt_ms), language=language)
+        # The database can be a slow network hop away (Supabase: 0.5 to 4 s measured), so the
+        # reply does not wait for it. The transcript event follows once the row exists.
+        self._user_save = asyncio.create_task(self._save_user_turn(text, language, stt_ms, self._user_save))
         metrics = TurnMetrics(speech_end=ended_at, stt_ms=stt_ms)
         await self._start_response(metrics)
+
+    async def _save_user_turn(
+        self, text: str, language: str, stt_ms: float, previous: asyncio.Task | None
+    ) -> None:
+        await _finished(previous)  # Two quick turns must keep their order in the transcript.
+        message = None
+        try:
+            message = await self.store.save_message("user", text, "completed", None)
+        except Exception:
+            log.exception("Could not save the user's message")
+        await self.emit("transcript.final", text=text, message=message, stt_ms=round(stt_ms), language=language)
 
     async def _run_command(self, command: Command) -> None:
         if command == Command.PAUSE:
@@ -708,6 +737,11 @@ class ConversationEngine:
 
         if response.metrics and response.metrics.first_audio_ms is None:
             response.metrics.first_audio_ms = (time.perf_counter() - response.metrics.speech_end) * 1000
+            log.info(
+                "Turn timing (ms): speech to text %s, first word from model %s, first audio %s (%s voice)",
+                _round(response.metrics.stt_ms), _round(response.metrics.llm_first_token_ms),
+                _round(response.metrics.first_audio_ms), tts.name,
+            )
             await self.emit(
                 "metrics.turn",
                 response_id=response.id,
@@ -762,6 +796,7 @@ class ConversationEngine:
         message = None
         if spoken:
             status = "interrupted" if unplayed_exists else "completed"
+            await _finished(self._user_save)  # The question must be numbered before its answer.
             message = await self.store.save_message("assistant", spoken, status, response.id)
             self.history.append({"role": "assistant", "content": spoken, "interrupted": unplayed_exists})
         if response.metrics:
@@ -826,6 +861,12 @@ class Executors:
         self.vad = ThreadPoolExecutor(max_workers=1, thread_name_prefix="vad", initializer=raise_thread_priority)
         self.stt = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stt")
         self.tts = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts")
+
+
+async def _finished(task: asyncio.Task | None) -> None:
+    """Wait for a task to end, without taking on its exception or cancelling it."""
+    if task is not None and not task.done():
+        await asyncio.wait([task])
 
 
 def _round(value: float | None) -> int | None:

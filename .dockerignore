@@ -1,0 +1,15 @@
+.env
+.data
+.git
+.netlify
+**/node_modules
+**/.next
+apps/web/out
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.venv
+backend/tests
+infrastructure
+*.log
+*.tsbuildinfo

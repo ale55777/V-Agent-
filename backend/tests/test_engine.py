@@ -296,15 +296,43 @@ async def test_pause_wins_over_a_transcript_still_being_saved(h):
         return await original(*args)
 
     h.store.save_message = slow_save
+    h.chat.reply = "A long explanation begins here. It keeps on going. And on."
     await h.speak()
     await wait_for(saving.is_set)
+    await wait_for(lambda: h.of_type("agent.response.started"))  # The reply does not wait for the save.
     await h.engine.pause()
+    spoken_so_far = len(h.of_type("agent.audio.chunk"))
     release.set()
     await settle()
     assert h.engine.state == State.PAUSED
-    assert not h.of_type("agent.response.started"), "no reply may start while paused"
+    assert h.engine._response is None
+    assert len(h.of_type("agent.audio.chunk")) == spoken_so_far, "nothing more may be spoken once paused"
+    assert [m["speaker"] for m in h.store.messages] == ["user"], "the question is still saved"
     await h.engine.resume()
-    assert h.engine.state == State.LISTENING
+    assert h.engine.state != State.PAUSED
+
+
+async def test_reply_does_not_wait_for_the_database_and_the_question_stays_first(h):
+    release = asyncio.Event()
+    original = h.store.save_message
+
+    async def slow_save(*args):
+        await release.wait()
+        return await original(*args)
+
+    h.store.save_message = slow_save
+    h.chat.reply = "A long explanation begins here. It keeps on going. And on."
+    await h.speak()
+    await wait_for(lambda: h.of_type("agent.audio.chunk"))
+    assert not h.store.messages, "audio should go out while the question is still being saved"
+
+    chunk = h.of_type("agent.audio.chunk")[0]
+    h.engine.on_playback(chunk["response_id"], chunk["chunk_seq"], chunk["duration_ms"])
+    stopping = asyncio.create_task(h.engine._interrupt(0.0))
+    await settle()
+    release.set()
+    await stopping
+    assert [m["speaker"] for m in h.store.messages] == ["user", "assistant"]
 
 
 async def test_pause_during_interruption_stays_paused(h):

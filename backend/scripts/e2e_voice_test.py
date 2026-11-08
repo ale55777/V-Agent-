@@ -260,7 +260,8 @@ async def run(base: str, engine: str = "local") -> int:
     email = f"e2e-{uuid.uuid4().hex[:10]}@example.com"
     results: dict = {}
     async with httpx.AsyncClient(base_url=base, timeout=60, verify=False) as api:
-        token = (await api.post("/api/v1/auth/register", json={"email": email, "password": "e2e-test-password"})).json()["access_token"]
+        await create_user(email, "e2e-test-password")
+        token = (await api.post("/api/v1/auth/login", json={"email": email, "password": "e2e-test-password"})).json()["access_token"]
         api.headers["Authorization"] = f"Bearer {token}"
         saved = (await api.get("/api/v1/agent/settings")).json()
         await api.put("/api/v1/agent/settings", json={**saved, "ai_engine": engine})
@@ -313,6 +314,19 @@ async def run(base: str, engine: str = "local") -> int:
         failed.append("interrupted_saved_status")
     print("FAILED: " + ", ".join(failed) if failed else "PASSED")
     return 1 if failed else 0
+
+
+async def create_user(email: str, password: str) -> None:
+    """Made directly in the database, because sign-up may be switched off on this server."""
+    from app.core.security import hash_password
+    from app.database.session import session_factory
+    from app.models.entities import AgentSettings, User
+
+    async with session_factory()() as db:
+        user = User(email=email, password_hash=hash_password(password))
+        user.settings = AgentSettings()
+        db.add(user)
+        await db.commit()
 
 
 async def delete_user(email: str) -> None:

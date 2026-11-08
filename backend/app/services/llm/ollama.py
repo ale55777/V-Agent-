@@ -17,9 +17,12 @@ SYSTEM_TEMPLATE = """You are EchoAI, a voice assistant having a live spoken conv
 Rules:
 - Your words are read aloud, so write plain sentences. Never use lists, markdown, code or emoji.
 - Reply in one to three short sentences unless the user asks for more detail.
+- Make your first sentence short, under ten words, and have it answer directly.
+- Always finish every sentence you start and end it with a full stop, even if earlier messages in this conversation look cut off.
 - Always give a complete answer in full sentences. Never reply with a single word or a fragment.
 - Do not greet the user again or repeat what they just said. Get straight to the answer.
 - Use the conversation so far to understand follow-up questions.
+- The user can cut in while you speak. A note in brackets then says the last words they heard. Answer what they said at that point. Do not start your previous answer over; continue it from where it stopped only if they ask you to or it still fits.
 - If you do not know something, say so plainly. Never invent facts.
 - {language_rule}"""
 
@@ -44,25 +47,62 @@ def estimate_tokens(text: str) -> int:
 
 # An interrupted reply shorter than this is left out of the prompt entirely.
 MIN_INTERRUPTED_WORDS = 6
+# How many of the last heard words the interruption note quotes back to the model.
+INTERRUPT_QUOTE_WORDS = 12
+
+
+def interruption_note(spoken: str) -> str:
+    """The note put before the user's words when they cut in, so the model knows where."""
+    words = spoken.rstrip(" ,;:-.").split()
+    quote = " ".join(words[-INTERRUPT_QUOTE_WORDS:])
+    if len(words) > INTERRUPT_QUOTE_WORDS:
+        quote = "..." + quote
+    return f'[I interrupted you right after you said: "{quote}"]'
+
+
+def is_complete_sentence(text: str) -> bool:
+    return bool(_COMPLETE_END.search(text.strip()))
+
+
+def complete_sentences(text: str) -> str:
+    """The part of a reply that ends on a finished sentence; empty if there is none."""
+    text = text.strip()
+    if is_complete_sentence(text):
+        return text
+    boundaries = [match.end() for match in _SENTENCE_END.finditer(text)]
+    return text[: boundaries[-1]].strip() if boundaries else ""
 
 
 def clean_history(history: list[dict]) -> list[dict]:
     """Turn the saved conversation into a prompt the model will not learn bad habits from.
 
-    Measured 2026-11-06: once a few replies had been cut off by the mic ("Hey,", "I"),
-    the model copied them and answered every later question with one word. So cut-off
-    fragments are dropped, longer cut-off replies are marked unfinished, and several user
-    turns in a row (the user repeating themselves while no answer came) become one.
+    The model copies the shape of its earlier replies. Measured 2026-11-08: with one cut-off
+    reply in the prompt, only 2 of 24 answers were whole sentences; with unfinished text
+    removed, 12 of 12 were. So every assistant turn is cut back to its last finished sentence
+    (or dropped if it has none), and several user turns in a row (the user repeating
+    themselves while no answer came) become one.
+
+    The user turn right after a kept cut-off reply starts with a note quoting the last
+    words the user heard, so the model answers from the point where it was interrupted.
     """
     cleaned: list[dict] = []
+    pending_note = ""
     for message in history:
         role, content = message["role"], message["content"].strip()
         if not content:
             continue
-        if role == "assistant" and message.get("interrupted"):
-            if len(content.split()) < MIN_INTERRUPTED_WORDS:
+        if role == "assistant":
+            pending_note = ""
+            if message.get("interrupted"):
+                if len(content.split()) < MIN_INTERRUPTED_WORDS:
+                    continue
+                pending_note = interruption_note(content)
+            content = complete_sentences(content)
+            if not content:
                 continue
-            content = content.rstrip(" ,;:-") + "..."
+        elif pending_note:
+            content = f"{pending_note} {content}"
+            pending_note = ""
         if cleaned and cleaned[-1]["role"] == role:
             cleaned[-1]["content"] += " " + content
         else:
@@ -169,9 +209,10 @@ class OllamaClient:
             raise LLMError(f"Could not reach Ollama at {settings.ollama_url}: {exc}") from exc
 
 
-# Sentence boundary, or a clause boundary once enough text has built up. Sending
-# clauses early is what gets the first audio out before the reply has finished.
+# Each sentence is synthesised whole, so it is spoken in one breath. A clause boundary is
+# only used for a very long sentence, which would otherwise hold up speech for too long.
 _SENTENCE_END = re.compile(r"(?<=[.!?۔؟])[\"')\]]*\s+")
+_COMPLETE_END = re.compile(r"[.!?۔؟][\"')\]]*$")
 _CLAUSE_END = re.compile(r"(?<=[,;:،])\s+")
 _ABBREVIATIONS = re.compile(r"(?:\b(?:Mr|Mrs|Ms|Dr|St|vs|etc|e\.g|i\.e)|\b[A-Z]|\b\d+)\.\s+$")
 
@@ -179,12 +220,13 @@ _ABBREVIATIONS = re.compile(r"(?:\b(?:Mr|Mrs|Ms|Dr|St|vs|etc|e\.g|i\.e)|\b[A-Z]|
 class SentenceChunker:
     """Splits streaming tokens into speakable pieces."""
 
-    def __init__(self, first_clause_chars: int = 24, clause_chars: int = 70, max_chars: int = 90) -> None:
+    def __init__(self, first_clause_chars: int = 180, clause_chars: int = 180, max_chars: int = 260) -> None:
         self.first_clause_chars = first_clause_chars
         self.clause_chars = clause_chars
         self.max_chars = max_chars
         self._buffer = ""
         self._emitted = 0
+        self._last_piece = ""
 
     def push(self, token: str) -> list[str]:
         self._buffer += token
@@ -195,6 +237,7 @@ class SentenceChunker:
                 return out
             out.append(piece)
             self._emitted += 1
+            self._last_piece = piece
 
     def _next_piece(self) -> str | None:
         for match in _SENTENCE_END.finditer(self._buffer):
@@ -219,5 +262,9 @@ class SentenceChunker:
         return piece or None
 
     def flush(self) -> str | None:
+        """The text left at the end of a reply. An unfinished tail after whole sentences is
+        dropped, so a reply never ends mid-sentence; a reply with nothing else is still said."""
         piece, self._buffer = self._buffer.strip(), ""
+        if piece and is_complete_sentence(self._last_piece) and not is_complete_sentence(piece):
+            return None
         return piece or None

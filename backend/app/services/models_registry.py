@@ -41,6 +41,7 @@ class ModelRegistry:
 
     def pipeline(self, ai_engine: str | None) -> tuple:
         """(speech recogniser, chat model) for a session. "groq" falls back to local when no key is set."""
+        ai_engine = self.settings.ai_engine_override or ai_engine
         if ai_engine == "groq" and self.groq_chat is not None:
             return self.groq_recognizer, self.groq_chat
         return self.recognizer, self.llm

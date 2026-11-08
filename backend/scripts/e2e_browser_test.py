@@ -24,7 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.config.settings import get_settings  # noqa: E402
 from app.services.audio.pcm import float_to_pcm16  # noqa: E402
 from app.services.tts.engines import PiperEngine  # noqa: E402
-from scripts.e2e_voice_test import delete_user, resample  # noqa: E402
+from scripts.e2e_voice_test import create_user, delete_user, resample  # noqa: E402
+
+PASSWORD = "browser-test-password"
 
 # (seconds of silence before the line, line). The fake mic starts when the session does.
 TIMELINE = [
@@ -56,6 +58,7 @@ async def run(base: str, out: Path) -> int:
     wav = work / "mic.wav"
     build_microphone_wav(wav)
     email = f"browser-{uuid.uuid4().hex[:10]}@example.com"
+    await create_user(email, PASSWORD)
     results: dict = {}
     console_errors: list[str] = []
 
@@ -82,28 +85,21 @@ async def run(base: str, out: Path) -> int:
         try:
             await page.goto(base)
             await page.wait_for_url("**/login/**")
-            await page.get_by_role("button", name="New here? Create an account").click()
             await page.get_by_label("Email").fill(email)
-            await page.get_by_label("Password").fill("browser-test-password")
+            await page.get_by_label("Password").fill(PASSWORD)
             await page.screenshot(path=out / "1-login.png")
-            await page.get_by_role("button", name="Create account").click()
+            await page.get_by_role("button", name="Sign in").click()
             await page.get_by_role("button", name="Start conversation").wait_for(timeout=30000)
             await page.screenshot(path=out / "2-ready.png")
 
-            # Record how far each waveform really moves. A flat line means no audio reached it.
+            # Record how far the orb really moves. It stays still if no audio reaches it.
             await page.evaluate(
                 """() => {
-                    window.__wave = [0, 0];
+                    window.__orb = 0;
                     setInterval(() => {
-                        document.querySelectorAll('canvas').forEach((canvas, index) => {
-                            const { width, height } = canvas;
-                            const pixels = canvas.getContext('2d').getImageData(0, 0, width, height).data;
-                            let top = height, bottom = 0;
-                            for (let y = 0; y < height; y++) for (let x = 0; x < width; x += 4) {
-                                if (pixels[(y * width + x) * 4 + 3] > 40) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
-                            }
-                            window.__wave[index] = Math.max(window.__wave[index], bottom - top);
-                        });
+                        const orb = document.querySelector('.orb');
+                        const level = orb ? parseFloat(orb.style.getPropertyValue('--level') || '0') : 0;
+                        window.__orb = Math.max(window.__orb, level);
                     }, 50);
                 }"""
             )
@@ -114,9 +110,8 @@ async def run(base: str, out: Path) -> int:
             await page.get_by_text("What is the capital of France").wait_for(timeout=60000)
             results["user_transcript_shown"] = True
             print("Transcript from the fake microphone appeared in the UI")
-            await page.get_by_text("dim text has not been spoken").wait_for(timeout=60000)
-            results["ai_subtitles_shown"] = True
-            await page.get_by_text("Speaking. Talk over me any time.").wait_for(timeout=60000)
+            await page.get_by_text("Talk over me any time to interrupt.").wait_for(timeout=60000)
+            results["ai_captions_shown"] = True
             await page.wait_for_timeout(500)
             await page.screenshot(path=out / "3-speaking.png")
             print("AI response is streaming")
@@ -124,7 +119,7 @@ async def run(base: str, out: Path) -> int:
             # Real-time playback must drive the session back to listening.
             await page.locator("text=/EchoAI · \\d/").first.wait_for(timeout=60000)
             results["ai_message_saved_after_playback"] = True
-            first_audio = await page.locator("dt:has-text('Last first-audio') + dd").inner_text()
+            first_audio = await page.locator("dt:has-text('Last response') + dd").inner_text()
             results["first_audio_shown"] = first_audio
             print(f"First-audio latency shown in UI: {first_audio}")
 
@@ -138,8 +133,7 @@ async def run(base: str, out: Path) -> int:
                 results["interruption_shown"] = False
             await page.screenshot(path=out / "4-interrupted.png")
             await asyncio.sleep(1)
-            wave_extent = await page.evaluate("window.__wave")
-            results["waveform_extent_px"] = {"microphone": wave_extent[0], "ai": wave_extent[1]}
+            results["orb_peak_level"] = await page.evaluate("window.__orb")
 
             await page.get_by_role("button", name="Pause", exact=True).click()
             await page.get_by_role("button", name="Resume", exact=True).wait_for(timeout=20000)
@@ -157,7 +151,7 @@ async def run(base: str, out: Path) -> int:
             await page.screenshot(path=out / "6-settings.png")
             await page.get_by_role("button", name="Close settings").click()
 
-            await page.get_by_role("button", name="End conversation").click()
+            await page.get_by_role("button", name="End", exact=True).click()
             await page.wait_for_url("**/report/**", timeout=30000)
             await page.get_by_text("Conversation report").wait_for(timeout=15000)
             await page.wait_for_timeout(800)

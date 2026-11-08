@@ -109,13 +109,27 @@ def test_chunker_keeps_abbreviations_and_decimals_together():
 
 
 def test_chunker_releases_a_long_first_clause_early():
-    pieces = stream(SentenceChunker(), "Well, thinking about this for a moment, the answer is quite simple really")
+    chunker = SentenceChunker(first_clause_chars=24)
+    pieces = stream(chunker, "Well, thinking about this for a moment, the answer is quite simple really")
     assert len(pieces) >= 2
+
+
+def test_chunker_keeps_a_normal_sentence_whole_so_it_is_spoken_in_one_flow():
+    sentence = "The sky looks blue, because air scatters blue light, which then reaches your eyes."
+    assert stream(SentenceChunker(), f"{sentence} It is simple.") == [sentence, "It is simple."]
+
+
+def test_chunker_splits_a_very_long_sentence_within_what_speech_can_take():
+    text = ", ".join(f"clause number {i} of a long sentence" for i in range(30)) + "."
+    pieces = stream(SentenceChunker(), text)
+    assert len(pieces) > 1
+    assert " ".join(pieces) == text
+    assert all(len(p) <= 400 for p in pieces), "speech synthesis truncates text beyond 400 characters"
 
 
 def test_chunker_releases_a_long_unpunctuated_sentence_without_losing_words():
     text = " ".join(f"word{i}" for i in range(60))
-    pieces = stream(SentenceChunker(), text)
+    pieces = stream(SentenceChunker(max_chars=90), text)
     assert len(pieces) > 1
     assert " ".join(pieces) == text
     assert all(len(p) <= 100 for p in pieces)
@@ -125,7 +139,7 @@ def test_context_keeps_recent_turns_when_conversation_exceeds_limit():
     history = []
     for i in range(400):
         history.append({"role": "user", "content": f"question {i} " + "word " * 30})
-        history.append({"role": "assistant", "content": f"answer {i} " + "word " * 30})
+        history.append({"role": "assistant", "content": f"answer {i} " + "word " * 30 + "end."})
     history.append({"role": "user", "content": "the latest question"})
     messages = build_messages(history, "", "en", num_ctx=2048, reserve_for_reply=160)
     assert messages[0]["role"] == "system"
@@ -255,13 +269,63 @@ def test_cut_off_fragments_do_not_teach_the_model_short_replies():
         {"role": "user", "content": "Go on."},
     ]
     assert clean_history(history) == [
-        {"role": "user", "content": "Hello? Are you an AI? Answer me."},
-        {"role": "assistant", "content": "Yes, I am an AI voice assistant that runs..."},
-        {"role": "user", "content": "Go on."},
+        {
+            "role": "user",
+            "content": (
+                "Hello? Are you an AI? Answer me."
+                ' [I interrupted you right after you said: "Yes, I am an AI voice assistant that runs"] Go on.'
+            ),
+        },
     ]
     # Only role and content reach the model: Groq rejects unknown message fields.
     messages = build_messages(history, "", "en", 2048, 160)
     assert all(set(m) == {"role", "content"} for m in messages)
+
+
+def test_interruption_note_quotes_the_last_heard_words():
+    from app.services.llm.ollama import clean_history
+
+    reply = "Paris is the capital of France and it is famous for the Eiffel Tower, which was built in"
+    history = [
+        {"role": "user", "content": "Tell me about Paris."},
+        {"role": "assistant", "content": reply, "interrupted": True},
+        {"role": "user", "content": "When was it built?"},
+        {"role": "assistant", "content": "It was finished in 1889."},
+        {"role": "user", "content": "Thanks."},
+    ]
+    cleaned = clean_history(history)
+    assert cleaned[0]["content"] == (
+        "Tell me about Paris."
+        ' [I interrupted you right after you said: "...and it is famous for the Eiffel Tower, which was built in"]'
+        " When was it built?"
+    )
+    # Only the turn that did the interrupting carries the note.
+    assert cleaned[-1]["content"] == "Thanks."
+
+
+def test_the_model_never_sees_an_unfinished_reply_even_one_saved_as_completed():
+    """Measured: fragments in the prompt made the model stop mid-sentence on its own."""
+    from app.services.llm.ollama import clean_history
+
+    history = [
+        {"role": "user", "content": "How are you?"},
+        {"role": "assistant", "content": "I am doing well, thank you. How are"},
+        {"role": "user", "content": "What are you?"},
+        {"role": "assistant", "content": "I am Echo"},
+        {"role": "user", "content": "Tell me."},
+        {"role": "assistant", "content": "I am EchoAI. Nice to meet you!", "interrupted": True},
+        {"role": "user", "content": "Thanks."},
+    ]
+    assistant = [m["content"] for m in clean_history(history) if m["role"] == "assistant"]
+    assert assistant == ["I am doing well, thank you.", "I am EchoAI. Nice to meet you!"]
+
+
+def test_a_reply_never_ends_on_an_unfinished_sentence():
+    assert stream(SentenceChunker(), "It is Paris. And the") == ["It is Paris."]
+
+
+def test_a_reply_with_only_a_fragment_is_still_said():
+    assert stream(SentenceChunker(), "Paris") == ["Paris"]
 
 
 def test_interrupting_stays_hard_at_high_sensitivity():

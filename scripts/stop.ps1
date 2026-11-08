@@ -27,6 +27,16 @@ foreach ($name in 'backend', 'web') {
     }
 }
 
+$tunnelPid = Join-Path $RunDir 'tunnel.pid'
+if (Test-Path $tunnelPid) {
+    $process = Get-Process -Id ([int](Get-Content $tunnelPid)) -ErrorAction SilentlyContinue
+    if ($process -and $process.Path -eq (Join-Path $DataDir 'bin\cloudflared.exe')) {
+        Stop-Process -Id $process.Id -Force
+        Write-Ok 'Stopped the Cloudflare tunnel'
+    }
+    Remove-Item $tunnelPid -Force
+}
+
 if (Test-DockerRunning) {
     Invoke-Compose stop | Out-Null
     Write-Ok 'Stopped PostgreSQL (data is kept)'

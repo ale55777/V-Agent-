@@ -1,0 +1,18 @@
+# Cloud build of backend/requirements.txt: no Kokoro (Piper is the voice here).
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+pydantic>=2.9,<3
+pydantic-settings>=2.6,<3
+httpx>=0.27,<1
+python-multipart>=0.0.12
+sqlalchemy[asyncio]>=2.0.36,<2.1
+asyncpg>=0.30,<1
+alembic>=1.14,<2
+pyjwt>=2.9,<3
+argon2-cffi>=23.1
+numpy>=1.26,<3
+onnxruntime>=1.20,<2
+faster-whisper>=1.1,<2
+piper-tts>=1.3,<2
+reportlab>=4.2,<5
+cryptography>=43

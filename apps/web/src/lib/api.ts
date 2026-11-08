@@ -3,6 +3,7 @@ import { EchoApi } from "@echoai/api-client";
 const TOKEN_KEY = "echoai.token";
 const DEVICE_KEY = "echoai.device";
 const ACTIVE_KEY = "echoai.activeSession";
+const API_KEY = "echoai.apiBase";
 
 function store(): Storage | null {
   try {
@@ -37,8 +38,23 @@ export function deviceId(): string {
  * the backend serving the UI itself over HTTPS) the API is on the same origin.
  */
 export function apiBase(): string {
+  if (typeof window === "undefined") return process.env.NEXT_PUBLIC_API_URL ?? "";
+  // A hosted copy of the UI (such as on Netlify) reaches a backend whose address can change,
+  // e.g. a free tunnel. Opening the page with ?api=https://... selects and remembers it.
+  const fromLink = new URLSearchParams(window.location.search).get("api");
+  if (fromLink && /^https:\/\/[^\s/]+$/.test(fromLink.replace(/\/+$/, ""))) {
+    const base = fromLink.replace(/\/+$/, "");
+    if (base !== store()?.getItem(API_KEY)) store()?.removeItem(TOKEN_KEY); // Another server's token is useless here.
+    store()?.setItem(API_KEY, base);
+    return base;
+  }
+  // The hosted copy's backend.js, which share.ps1 keeps pointing at the live tunnel.
+  const published = (window as { __ECHOAI_API__?: string }).__ECHOAI_API__;
+  if (published) return published.replace(/\/+$/, "");
+  // A build with a fixed backend wins over an old remembered tunnel address.
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
-  if (typeof window === "undefined") return "";
+  const remembered = store()?.getItem(API_KEY);
+  if (remembered) return remembered;
   const { protocol, hostname, port, origin } = window.location;
   return port === "3000" ? `${protocol}//${hostname}:8000` : origin;
 }

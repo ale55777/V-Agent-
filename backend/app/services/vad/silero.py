@@ -61,7 +61,7 @@ class VadConfig:
     interrupt_threshold: float = 0.75
     min_speech_ms: int = 160
     interrupt_min_speech_ms: int = 280
-    silence_ms: int = 750
+    silence_ms: int = 500
     max_silence_ms: int = 1800
     padding_ms: int = 192
     max_utterance_seconds: int = 30
@@ -98,6 +98,9 @@ class SpeechSegmenter:
         self._silence_ms = 0.0
         self.speech_ms = 0.0
         self.finished_utterance: bytes | None = None
+        # Diagnostics for barge-in, read and reset by the engine's periodic mic report.
+        self.guarded_peak = 0.0
+        self.guarded_best_run_ms = 0.0
 
     @property
     def in_speech(self) -> bool:
@@ -124,9 +127,13 @@ class SpeechSegmenter:
         cfg = self.config
         threshold = cfg.interrupt_threshold if self.guarded else cfg.threshold
 
+        if self.guarded:
+            self.guarded_peak = max(self.guarded_peak, probability)
         if not self._in_speech:
             if probability >= threshold:
                 self._candidate.append(frame)
+                if self.guarded:
+                    self.guarded_best_run_ms = max(self.guarded_best_run_ms, len(self._candidate) * VAD_FRAME_MS)
                 needed = cfg.interrupt_min_speech_ms if self.guarded else cfg.min_speech_ms
                 if len(self._candidate) * VAD_FRAME_MS >= needed:
                     self._utterance = [*self._pre_roll, *self._candidate]

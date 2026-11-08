@@ -1,0 +1,73 @@
+# EchoAI as one Docker Compose stack: backend, web UI, a Cloudflare quick tunnel, and a
+# publisher that keeps the Netlify site pointed at the tunnel. The database stays on Supabase.
+#
+#   Start:  docker compose up -d --build      (from this folder; scripts\stop.ps1 first)
+#   Link:   docker compose logs publisher
+#   Stop:   docker compose down
+#
+# restart: unless-stopped means the stack comes back whenever Docker Desktop starts.
+# Values come from .env next to this file.
+name: echoai-stack
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/compose/backend.Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Containers have no IPv6, and Supabase's direct host is IPv6-only: use the IPv4
+      # session pooler (not the transaction pooler, which asyncpg cannot use).
+      ECHOAI_DATABASE_URL: ${ECHOAI_CLOUD_DATABASE_URL:?Set ECHOAI_CLOUD_DATABASE_URL in .env}
+      ECHOAI_AI_ENGINE_OVERRIDE: groq
+      # auto: Kokoro and Piper are both offered; Piper is the default on a 2-core CPU.
+      ECHOAI_TTS_ENGINE: auto
+      ECHOAI_OLLAMA_URL: http://host.docker.internal:11434
+      ECHOAI_HOST: 0.0.0.0
+      ECHOAI_PORT: "8000"
+      ECHOAI_STT_THREADS: "2"
+      ECHOAI_TTS_THREADS: "2"
+    volumes:
+      - ./.data/models:/models
+    ports:
+      - "8000:8000"
+    mem_limit: 2g  # Room for Kokoro when one of its voices is chosen.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      start_period: 120s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/compose/web.Dockerfile
+      target: site
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    mem_limit: 64m
+
+  tunnel:
+    image: cloudflare/cloudflared:2024.12.2
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:20241 --url http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    mem_limit: 128m
+
+  publisher:
+    build:
+      context: .
+      dockerfile: deploy/compose/web.Dockerfile
+      target: publisher
+    restart: unless-stopped
+    environment:
+      NETLIFY_AUTH_TOKEN: ${NETLIFY_AUTH_TOKEN:-}
+      NETLIFY_SITE_ID: ${NETLIFY_SITE_ID:-6c97b04e-3f38-4cc7-8b56-5bf0d20c66bb}
+    depends_on:
+      - tunnel
+    mem_limit: 256m

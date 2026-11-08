@@ -32,9 +32,15 @@ function Start-Service-Process([string]$Name, [string[]]$Arguments) {
 }
 
 Write-Step 'PostgreSQL'
-if (-not (Start-DockerEngine)) { exit 1 }
-Invoke-Compose up -d --wait | Out-Null
-Write-Ok 'Database is ready'
+$databaseUrl = (Read-EnvFile)['ECHOAI_DATABASE_URL']
+if ($databaseUrl -and $databaseUrl -notmatch '@(127\.0\.0\.1|localhost)[:/]') {
+    # A hosted database (such as Supabase) needs no Docker, which saves about 1 GB of RAM.
+    Write-Ok 'Using the hosted database from .env (Docker not needed)'
+} else {
+    if (-not (Start-DockerEngine)) { exit 1 }
+    Invoke-Compose up -d --wait | Out-Null
+    Write-Ok 'Database is ready'
+}
 
 Write-Step 'Ollama'
 if (-not (Start-OllamaServer)) { exit 1 }

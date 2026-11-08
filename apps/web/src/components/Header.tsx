@@ -35,33 +35,43 @@ export function Header({ connected, onSettings }: { connected?: boolean; onSetti
   const status = modelStatus(health);
 
   return (
-    <header className="glass sticky top-0 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 border-x-0 border-t-0 px-4 py-3 sm:px-6">
-      <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-accent to-speak text-white">
+    <header className="sticky top-0 z-20 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-white/[0.06] bg-ink-950/80 px-4 py-3 sm:px-6">
+      <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-accent to-speak text-white shadow-[0_6px_20px_-6px_rgba(124,108,255,0.8)]">
           <AudioLines size={18} aria-hidden />
         </span>
-        EchoAI
+        <span className="text-[15px]">
+          Echo<span className="text-gradient">AI</span>
+        </span>
       </Link>
-      <div className="flex items-center gap-3 text-xs text-slate-400">
+      <div className="flex items-center gap-2 text-[11px]">
         {connected !== undefined && (
-          <span className={cn("flex items-center gap-1.5", connected ? "text-listen" : "text-slate-400")}>
-            {connected ? <Wifi size={14} aria-hidden /> : <WifiOff size={14} aria-hidden />}
-            {connected ? "Connected" : "Not connected"}
+          <span
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-2.5 py-1",
+              connected ? "border-listen/25 bg-listen/10 text-listen" : "border-white/10 bg-white/5 text-slate-400",
+            )}
+          >
+            {connected ? <Wifi size={12} aria-hidden /> : <WifiOff size={12} aria-hidden />}
+            <span className="hidden sm:inline">{connected ? "Connected" : "Not connected"}</span>
           </span>
         )}
-        <span className={cn("flex items-center gap-1.5", status.color)} title={health?.models.llm.detail}>
-          <Cpu size={14} aria-hidden /> {status.label}
+        <span
+          className={cn("flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1", status.color)}
+          title={health?.models.llm.detail}
+        >
+          <Cpu size={12} aria-hidden /> {status.label}
         </span>
       </div>
       <nav className="ml-auto flex items-center gap-1">
         {onSettings && (
-          <Button variant="ghost" size="sm" onClick={onSettings}>
-            <Settings size={16} aria-hidden /> Settings
+          <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Settings">
+            <Settings size={16} aria-hidden /> <span className="hidden sm:inline">Settings</span>
           </Button>
         )}
-        <Link href="/history/">
-          <Button variant="ghost" size="sm">
-            <History size={16} aria-hidden /> History
+        <Link href="/history/" aria-label="History">
+          <Button variant="ghost" size="sm" tabIndex={-1}>
+            <History size={16} aria-hidden /> <span className="hidden sm:inline">History</span>
           </Button>
         </Link>
         <Button

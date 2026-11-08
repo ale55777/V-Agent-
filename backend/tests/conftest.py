@@ -11,6 +11,9 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("ECHOAI_SECRET_KEY", "test-secret-key-that-is-long-enough-for-hs256-signing")
+# Tests must not depend on how this machine's .env is set up (e.g. signups off for a public tunnel).
+os.environ["ECHOAI_ALLOW_REGISTRATION"] = "true"
+os.environ["ECHOAI_AI_ENGINE_OVERRIDE"] = ""
 
 import numpy as np
 import pytest
