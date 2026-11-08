@@ -111,12 +111,12 @@ def _lines(report: dict) -> list[tuple[str, str]]:
 
 
 def export_txt(report: dict) -> str:
-    out = [f"EchoAI conversation: {report['session']['title']}", "=" * 60]
+    out = [f"Jarvis conversation: {report['session']['title']}", "=" * 60]
     out += [f"{label}: {value}" for label, value in _lines(report)]
     out += ["", report["cost"]["note"], "", "Transcript", "-" * 60]
     for m in report["transcript"]:
         tag = " [interrupted]" if m["interrupted"] else ""
-        out.append(f"[{_clock(m['timestamp'])}] {'You' if m['speaker'] == 'user' else 'EchoAI'}{tag}: {m['content']}")
+        out.append(f"[{_clock(m['timestamp'])}] {'You' if m['speaker'] == 'user' else 'Jarvis'}{tag}: {m['content']}")
     return "\n".join(out) + "\n"
 
 
@@ -136,10 +136,10 @@ def export_pdf(report: dict) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm,
-        title=report["session"]["title"], author="EchoAI",
+        title=report["session"]["title"], author="Jarvis",
     )
     # Every value goes through escape(): transcripts are user content and Paragraph parses markup.
-    story = [Paragraph(f"EchoAI report: {escape(report['session']['title'])}", styles["Title"])]
+    story = [Paragraph(f"Jarvis report: {escape(report['session']['title'])}", styles["Title"])]
     table = Table(
         [[Paragraph(escape(a), body), Paragraph(escape(b), body)] for a, b in _lines(report)],
         colWidths=[62 * mm, 110 * mm],
@@ -148,7 +148,7 @@ def export_pdf(report: dict) -> bytes:
     story += [table, Spacer(1, 4 * mm), Paragraph(escape(report["cost"]["note"]), body), Spacer(1, 4 * mm)]
     story.append(Paragraph("Transcript", styles["Heading2"]))
     for m in report["transcript"]:
-        who = "You" if m["speaker"] == "user" else "EchoAI"
+        who = "You" if m["speaker"] == "user" else "Jarvis"
         tag = " (interrupted)" if m["interrupted"] else ""
         story.append(
             Paragraph(f"<b>{who}{tag}</b> <font color='#777777'>{escape(_clock(m['timestamp']))}</font>", body)

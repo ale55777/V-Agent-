@@ -46,7 +46,7 @@ class AgentSettings(Base):
     vad_sensitivity: Mapped[float] = mapped_column(Float, default=0.5)
     attention_mode: Mapped[str] = mapped_column(String(20), default="always")
     personality: Mapped[str] = mapped_column(Text, default="")
-    wake_word: Mapped[str] = mapped_column(String(40), default="echo")
+    wake_word: Mapped[str] = mapped_column(String(40), default="jarvis")
     retention_days: Mapped[int | None] = mapped_column(Integer)
     # "local" keeps everything on this PC. "groq" sends audio and text to Groq (opt-in).
     ai_engine: Mapped[str] = mapped_column(String(10), default="local", server_default="local")

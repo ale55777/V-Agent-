@@ -37,7 +37,7 @@ class AgentSettingsBody(BaseModel):
     vad_sensitivity: float = Field(default=0.5, ge=0, le=1)
     attention_mode: Literal["always", "wake_word", "manual"] = "always"
     personality: str = Field(default="", max_length=1000)
-    wake_word: str = Field(default="echo", min_length=2, max_length=40)
+    wake_word: str = Field(default="jarvis", min_length=2, max_length=40)
     retention_days: int | None = Field(default=None, ge=1, le=3650)
     ai_engine: Literal["local", "groq"] = "local"
 

@@ -406,7 +406,7 @@ async def test_wake_word_mode_only_responds_after_activation():
     assert h.of_type("transcript.discarded")[0]["reason"] == "no_wake_word"
     assert not h.of_type("agent.response.started")
 
-    h.stt.queue = ["Hey Echo, what time is it"]
+    h.stt.queue = ["Hey Jarvis, what time is it"]
     await h.speak()
     await wait_for(lambda: h.of_type("agent.response.started"))
     assert h.of_type("transcript.final")[0]["text"] == "what time is it"

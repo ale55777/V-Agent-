@@ -142,7 +142,7 @@ function greeting(): string {
   return hour < 5 ? "Up late?" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 }
 
-/** The big line under the orb: what EchoAI is saying, what it heard from you, or a hint. */
+/** The big line under the orb: what Jarvis is saying, what it heard from you, or a hint. */
 export function LiveCaption({
   state, partial, reply, listeningForResume,
 }: { state: SessionState; partial: string; reply: LiveReply | null; listeningForResume: boolean }) {

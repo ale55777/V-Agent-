@@ -117,7 +117,7 @@ async def run(base: str, out: Path) -> int:
             print("AI response is streaming")
 
             # Real-time playback must drive the session back to listening.
-            await page.locator("text=/EchoAI · \\d/").first.wait_for(timeout=60000)
+            await page.locator("text=/Jarvis · \\d/").first.wait_for(timeout=60000)
             results["ai_message_saved_after_playback"] = True
             first_audio = await page.locator("dt:has-text('Last response') + dd").inner_text()
             results["first_audio_shown"] = first_audio

@@ -46,7 +46,7 @@ COMMAND_HINT = "Pause. Stop. Continue. I'm back. Repeat that. End conversation."
 COMMAND_HINT_MAX_SECONDS = 2.0
 
 _NORMALISE = re.compile(r"[^\w\s]")
-_FILLERS = re.compile(r"^(?:(?:um+|uh+|ok|okay|hey|please|echo|echo ai|so)\s+)+")
+_FILLERS = re.compile(r"^(?:(?:um+|uh+|ok|okay|hey|please|jarvis|so)\s+)+")
 _WAKE_GREETINGS = {"hey", "hi", "hello", "ok", "okay", "yo"}
 
 

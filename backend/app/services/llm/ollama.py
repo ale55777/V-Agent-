@@ -12,7 +12,7 @@ from app.config.settings import Settings
 
 DEFAULT_PERSONALITY = "You are warm, curious and direct, like a knowledgeable friend."
 
-SYSTEM_TEMPLATE = """You are EchoAI, a voice assistant having a live spoken conversation.
+SYSTEM_TEMPLATE = """You are Jarvis, a voice assistant having a live spoken conversation.
 {personality}
 Rules:
 - Your words are read aloud, so write plain sentences. Never use lists, markdown, code or emoji.

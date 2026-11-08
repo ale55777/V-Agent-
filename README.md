@@ -1,4 +1,4 @@
-# EchoAI
+# Jarvis
 
 A real-time AI voice assistant that runs entirely on your own Windows PC. There are no API keys and no
 paid services: speech recognition, the AI model and the voice all run locally. You can talk over it at
@@ -113,7 +113,7 @@ your account, or anyone who can reach the port can create one.
 | Repeat that | Speaks the last reply again |
 | End conversation | Ends the session and opens the report |
 
-**Attention modes** (in Settings): Always listening, Wake word (default "echo", awake for 20 seconds),
+**Attention modes** (in Settings): Always listening, Wake word (default "jarvis", awake for 20 seconds),
 and Manual pause. The **Pause button** ignores the microphone completely until you press Resume.
 
 ## Privacy
@@ -192,7 +192,7 @@ REST endpoints are documented at `http://localhost:8000/docs` while running.
 | It interrupts itself | Use headphones, or lower the microphone sensitivity in Settings |
 | It cuts you off mid-sentence | Raise `ECHOAI_VAD_SILENCE_MS` in `.env` (default 750) |
 | Microphone blocked on another device | That needs HTTPS: `start.ps1 -Https` |
-| "No sound is reaching EchoAI from …" | Choose another microphone in Settings, and check it is not muted in Windows |
+| "No sound is reaching Jarvis from …" | Choose another microphone in Settings, and check it is not muted in Windows |
 | "… does not sound like speech" | Speak closer to the microphone, or choose another one in Settings |
 
 ## Progress log

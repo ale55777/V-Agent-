@@ -86,7 +86,7 @@ class EngineConfig:
     llm_model: str | None = None
     personality: str = ""
     attention_mode: AttentionMode = AttentionMode.ALWAYS
-    wake_word: str = "echo"
+    wake_word: str = "jarvis"
     num_ctx: int = 2048
     num_predict: int = 160
     partial_interval_ms: int = 1200

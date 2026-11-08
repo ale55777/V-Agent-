@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "EchoAI",
+  title: "Jarvis",
   description: "A private, real-time AI voice assistant that runs entirely on your own computer.",
 };
 

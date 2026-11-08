@@ -101,8 +101,8 @@ if ($NetlifySiteId -and (Test-Path $built) -and (Get-Command netlify.cmd -ErrorA
 }
 
 Write-Host ''
-Write-Host 'Open EchoAI from any device:' -ForegroundColor Green
+Write-Host 'Open Jarvis from any device:' -ForegroundColor Green
 Write-Host "  $link"
-Write-Host '  Works while this PC is on, awake and running EchoAI.'
+Write-Host '  Works while this PC is on, awake and running Jarvis.'
 Write-Host '  Stop with: scripts\stop.ps1'
 Set-Content (Join-Path $RunDir 'share-link.txt') $link

@@ -50,7 +50,7 @@ export function Bubble({ message }: { message: Pick<Message, "speaker" | "conten
       user={user}
       meta={
         <>
-          {user ? "You" : "EchoAI"} · {formatTime(message.timestamp)}
+          {user ? "You" : "Jarvis"} · {formatTime(message.timestamp)}
           {message.interrupted && <span className="ml-1 text-halt/80">· interrupted</span>}
         </>
       }
@@ -100,7 +100,7 @@ export function ConversationPanel({
             </span>
             <p className="text-sm text-slate-300">No messages yet</p>
             <p className="max-w-xs text-xs text-slate-500">
-              Everything you and EchoAI say shows up here as you talk, and is saved to your history.
+              Everything you and Jarvis say shows up here as you talk, and is saved to your history.
             </p>
           </div>
         )}
@@ -108,7 +108,7 @@ export function ConversationPanel({
           <Bubble key={message.id} message={message} />
         ))}
         {reply && (reply.generated || reply.spokenChars > 0) && (
-          <Row user={false} meta={<span className="text-speak">EchoAI · {reply.spokenChars > 0 ? "speaking" : "getting ready to speak"}</span>}>
+          <Row user={false} meta={<span className="text-speak">Jarvis · {reply.spokenChars > 0 ? "speaking" : "getting ready to speak"}</span>}>
             <div className={bubbleClass(false)}>
               <span className="text-slate-100">{spoken}</span>
               <span className="text-slate-500">{pending}</span>

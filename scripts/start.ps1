@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
 
 if (-not (Test-Path $EnvFile) -or -not (Test-Path $Python)) {
-    Write-Fail 'EchoAI is not set up yet. Run scripts\setup.ps1 first.'
+    Write-Fail 'Jarvis is not set up yet. Run scripts\setup.ps1 first.'
     exit 1
 }
 New-Item -ItemType Directory -Force $RunDir, $LogDir | Out-Null
@@ -68,7 +68,7 @@ if ($Https) {
     $scheme = 'https'
 }
 
-Write-Step 'EchoAI services'
+Write-Step 'Jarvis services'
 Start-Service-Process 'backend' $backendArgs
 Start-Service-Process 'web' @('scripts/serve_web.py', '--port', '3000')
 
@@ -101,7 +101,7 @@ foreach ($part in 'vad', 'stt', 'tts', 'llm') {
 
 $local = if ($Https) { 'https://localhost:8000' } else { 'http://localhost:3000' }
 Write-Host ''
-Write-Host "EchoAI is running." -ForegroundColor Green
+Write-Host "Jarvis is running." -ForegroundColor Green
 Write-Host "  On this PC:      $local"
 if ($Https) {
     Write-Host "  Other devices:   https://${ip}:8000  (accept the certificate warning once)"

@@ -41,7 +41,7 @@ export function Header({ connected, onSettings }: { connected?: boolean; onSetti
           <AudioLines size={18} aria-hidden />
         </span>
         <span className="text-[15px]">
-          Echo<span className="text-gradient">AI</span>
+          <span className="text-gradient">Jarvis</span>
         </span>
       </Link>
       <div className="flex items-center gap-2 text-[11px]">

@@ -10,7 +10,7 @@ param([switch]$All)
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot 'common.ps1')
 
-Write-Step 'Stopping EchoAI'
+Write-Step 'Stopping Jarvis'
 foreach ($name in 'backend', 'web') {
     $file = Join-Path $RunDir "$name.pid"
     if (Test-Path $file) {

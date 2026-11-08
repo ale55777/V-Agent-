@@ -78,7 +78,7 @@ export function useVoiceSession(onEnded: (sessionId: string) => void) {
         const name = mic.current?.label ?? "your microphone";
         setNotice(
           event.peak < 0.01
-            ? `No sound is reaching EchoAI from “${name}” (level ${event.peak.toFixed(3)}). If you are talking, choose another microphone in Settings, and check it is not muted in Windows.`
+            ? `No sound is reaching Jarvis from “${name}” (level ${event.peak.toFixed(3)}). If you are talking, choose another microphone in Settings, and check it is not muted in Windows.`
             : `“${name}” picks up sound (level ${event.peak.toFixed(3)}), but it does not sound like speech (${Math.round(event.speech * 100)}%, needs ${Math.round(event.threshold * 100)}%). Speak closer to it, or choose another microphone in Settings.`,
         );
         break;

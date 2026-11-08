@@ -135,7 +135,7 @@ def _build_config(settings: Settings, agent: AgentSettings | None) -> EngineConf
         llm_model=(agent.selected_llm if agent else None) or settings.llm_model,
         personality=agent.personality if agent else "",
         attention_mode=mode,
-        wake_word=(agent.wake_word if agent else "") or "echo",
+        wake_word=(agent.wake_word if agent else "") or "jarvis",
         num_ctx=settings.llm_num_ctx,
         num_predict=settings.llm_num_predict,
         partial_interval_ms=settings.partial_interval_ms,

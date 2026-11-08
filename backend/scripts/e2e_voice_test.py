@@ -157,7 +157,7 @@ class Client:
         _, done = await self.wait_for(lambda e: e["type"] == "agent.response.completed", timeout, since)
         _, turn_metrics = await self.wait_for(lambda e: e["type"] == "metrics.turn", 1, since)
         print(f"\n  YOU (heard): {final['text']}")
-        print(f"  ECHOAI:      {done['spoken_text']}")
+        print(f"  JARVIS:      {done['spoken_text']}")
         print(
             f"  transcribe {turn_metrics['stt_ms']} ms | LLM first token {turn_metrics['llm_first_token_ms']} ms"
             f" | speech end to first audio {turn_metrics['first_audio_ms']} ms"
@@ -214,7 +214,7 @@ async def scenario(client: Client, api: httpx.AsyncClient, session_id: str, resu
     _, done = await client.wait_for(
         lambda e: e["type"] == "agent.response.completed" and e["response_id"] != response_id, 90, since
     )
-    print(f"  YOU (heard): {final['text']}\n  ECHOAI:      {done['spoken_text']}")
+    print(f"  YOU (heard): {final['text']}\n  JARVIS:      {done['spoken_text']}")
 
     print("\n[4] Voice commands")
     since = client.mark()
@@ -296,7 +296,7 @@ async def run(base: str, engine: str = "local") -> int:
                 print(f"  {message['sequence_number']:>2} {message['speaker']:<9}{flag} {message['content']}")
             results["saved_messages"] = len(report["transcript"])
             results["status"] = report["session"]["status"]
-            for fmt, check in (("txt", b"EchoAI"), ("json", b"transcript"), ("pdf", b"%PDF")):
+            for fmt, check in (("txt", b"Jarvis"), ("json", b"transcript"), ("pdf", b"%PDF")):
                 exported = await api.get(f"/api/v1/sessions/{session_id}/export/{fmt}")
                 assert check in exported.content[:4000], fmt
             results["exports_ok"] = True

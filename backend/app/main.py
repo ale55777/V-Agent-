@@ -1,4 +1,4 @@
-"""EchoAI FastAPI application."""
+"""Jarvis FastAPI application."""
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="EchoAI", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Jarvis", version="1.0.0", lifespan=lifespan)
 
     # Private-network origins on the web port are allowed so LAN devices work without
     # hardcoding an IP. The API uses bearer tokens, not cookies, so credentials stay off.

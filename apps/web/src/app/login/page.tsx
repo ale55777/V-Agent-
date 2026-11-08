@@ -24,7 +24,7 @@ export default function LoginPage() {
       router.replace("/");
     } catch (cause) {
       const failure = cause as Error;
-      setError(failure.message === "Failed to fetch" ? "Cannot reach the EchoAI backend. Is it running?" : failure.message);
+      setError(failure.message === "Failed to fetch" ? "Cannot reach the Jarvis backend. Is it running?" : failure.message);
     } finally {
       setBusy(false);
     }
@@ -39,7 +39,7 @@ export default function LoginPage() {
           </span>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              Echo<span className="text-gradient">AI</span>
+              <span className="text-gradient">Jarvis</span>
             </h1>
             <p className="mt-1 text-sm text-slate-400">Talk naturally. Interrupt any time.</p>
           </div>
