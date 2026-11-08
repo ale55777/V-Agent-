@@ -13,7 +13,7 @@ import logging
 import threading
 import time
 import wave
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 import httpx
 import numpy as np
@@ -32,12 +32,19 @@ _LANGUAGE_CODES = {"english": "en", "urdu": "ur", "hindi": "hi", "arabic": "ar",
 # httpx drops idle connections after 5 s by default, shorter than the gap between two turns.
 # Measured 2026-11-08: a reused connection reaches the first token about 90 ms sooner.
 _KEEP_CONNECTION_OPEN = httpx.Limits(keepalive_expiry=60.0)
+# gpt-oss models think briefly before answering, and that counts against max_tokens.
+_REASONING_TOKENS = 120
 
 
 class GroqError(RuntimeError):
-    def __init__(self, message: str, retry_after: float | None = None) -> None:
+    def __init__(self, message: str, retry_after: float | None = None, status: int | None = None) -> None:
         super().__init__(message)
         self.retry_after = retry_after
+        self.status = status
+
+    @property
+    def rate_limited(self) -> bool:
+        return self.status == 429
 
 
 def _retry_after(response: httpx.Response) -> float | None:
@@ -53,7 +60,7 @@ def _error_from(response: httpx.Response, body: bytes) -> GroqError:
         text = json.loads(text)["error"]["message"]
     except Exception:
         pass
-    return GroqError(f"Groq returned {response.status_code}: {text[:200]}", _retry_after(response))
+    return GroqError(f"Groq returned {response.status_code}: {text[:200]}", _retry_after(response), response.status_code)
 
 
 def _wav(samples: np.ndarray, rate: int = 16000) -> bytes:
@@ -150,17 +157,19 @@ class FallbackRecognizer:
         self.primary = primary
         self.fallback = fallback
         self.cooldown = cooldown
+        # Speech has its own rate limit, so hitting it must not switch the chat model off.
+        self.rate_limit = Cooldown(cooldown.default_seconds)
         self.name = primary.name
 
     def transcribe(self, samples: np.ndarray, language: str | None, final: bool, hint: str = "") -> Transcript:
-        if not self.cooldown.active or self.fallback is None:
+        if not (self.cooldown.active or self.rate_limit.active) or self.fallback is None:
             try:
                 return self.primary.transcribe(samples, language, final, hint)
             except GroqError as exc:
                 if self.fallback is None:
                     raise
                 log.warning("Groq speech-to-text failed, using the local model: %s", exc)
-                self.cooldown.trip(exc.retry_after)
+                (self.rate_limit if exc.rate_limited else self.cooldown).trip(exc.retry_after)
         return self.fallback.transcribe(samples, language, final, hint)
 
 
@@ -168,9 +177,9 @@ class FallbackRecognizer:
 
 
 class GroqChat:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, model_name: str | None = None) -> None:
         self.settings = settings
-        self.model_name = settings.groq_llm_model
+        self.model_name = model_name or settings.groq_llm_model
         self.name = f"groq/{self.model_name}"
         self._client = httpx.AsyncClient(
             base_url=settings.groq_base_url,
@@ -194,6 +203,12 @@ class GroqChat:
         }
         if self.model_name.startswith("qwen/"):
             payload["reasoning_effort"] = "none"  # A spoken reply cannot wait for thinking.
+        elif self.model_name.startswith("openai/gpt-oss"):
+            payload.update(
+                reasoning_effort="low",
+                include_reasoning=False,
+                max_tokens=settings.llm_num_predict + _REASONING_TOKENS,
+            )
         try:
             async with self._client.stream("POST", "/chat/completions", json=payload) as response:
                 if response.status_code != 200:
@@ -215,19 +230,28 @@ class GroqChat:
 
 
 class FallbackChat:
-    """Groq first, the local Ollama model if Groq fails before saying anything."""
+    """Groq first, the local Ollama model if Groq fails before saying anything.
 
-    def __init__(self, primary: GroqChat, fallback, cooldown: Cooldown) -> None:
-        self.primary = primary
+    Groq's limits are per model, and the free daily one ran out in real use (200,000 tokens).
+    The local model then took 4 to 12 s per reply, against under 1 s for a spare Groq model,
+    so a rate-limited model hands over to the next spare and only sits out its own wait.
+    """
+
+    def __init__(self, primary: GroqChat, fallback, cooldown: Cooldown, spares: Sequence[GroqChat] = ()) -> None:
+        self.models = [(chat, Cooldown(cooldown.default_seconds)) for chat in (primary, *spares)]
         self.fallback = fallback
-        self.cooldown = cooldown
+        self.cooldown = cooldown  # Groq itself is unreachable, so no model is worth trying.
         self.name = primary.name
 
     async def stream(self, messages: list[dict], model: str | None = None) -> AsyncIterator[str]:
-        if not self.cooldown.active:
+        for chat, rate_limit in self.models:
+            if self.cooldown.active:
+                break
+            if rate_limit.active:
+                continue
             started = False
             try:
-                async for token in self.primary.stream(messages, model):
+                async for token in chat.stream(messages, model):
                     started = True
                     yield token
                 return
@@ -235,7 +259,11 @@ class FallbackChat:
                 if started:
                     # Half a reply has already been spoken; restarting it locally would repeat it.
                     raise LLMError(str(exc)) from exc
-                log.warning("Groq chat failed, using the local model: %s", exc)
-                self.cooldown.trip(exc.retry_after)
+                if exc.rate_limited:
+                    log.warning("Groq model %s is rate limited, trying the next one: %s", chat.model_name, exc)
+                    rate_limit.trip(exc.retry_after)
+                else:
+                    log.warning("Groq chat failed, using the local model: %s", exc)
+                    self.cooldown.trip(exc.retry_after)
         async for token in self.fallback.stream(messages, model):
             yield token

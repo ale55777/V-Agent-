@@ -52,7 +52,8 @@ class ModelRegistry:
             return
         cooldown = Cooldown(s.groq_retry_after_seconds)  # Shared: no internet affects both.
         self.groq_recognizer = FallbackRecognizer(GroqRecognizer(s), self.recognizer, cooldown)
-        self.groq_chat = FallbackChat(GroqChat(s), self.llm, cooldown)
+        spares = [GroqChat(s, name) for name in s.groq_llm_spare_models]
+        self.groq_chat = FallbackChat(GroqChat(s), self.llm, cooldown, spares)
         self.status["groq"] = {"state": "ready", "detail": f"{s.groq_stt_model} + {s.groq_llm_model}"}
 
     def new_vad(self) -> SileroVAD:
@@ -130,6 +131,8 @@ class ModelRegistry:
         engine = self.default_tts()
         if engine is None:
             raise RuntimeError("No text-to-speech engine could be loaded: " + "; ".join(errors))
+        if "piper" in self.engines:  # The first sentence is about 130 ms slower without this.
+            list(self.engines["piper"].synthesize("Ready.", None))
         return engine.name
 
     def _fastest_engine(self) -> str:

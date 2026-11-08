@@ -66,7 +66,8 @@ def test_speech_falls_back_to_local_and_cools_down():
     cooldown = Cooldown(30)
     wrapped = FallbackRecognizer(recognizer(handler), ScriptedRecognizer("local words"), cooldown)
     assert wrapped.transcribe(SILENCE, "en", True).text == "local words"
-    assert cooldown.active
+    assert wrapped.rate_limit.active
+    assert not cooldown.active  # Chat has its own limit and carries on using Groq.
     # While cooling down Groq is not even tried.
     assert wrapped.transcribe(SILENCE, "en", True).text == "local words"
     assert len(calls) == 1
@@ -108,3 +109,65 @@ async def test_chat_failing_mid_reply_does_not_restart_locally():
         async for token in wrapped.stream([{"role": "user", "content": "hi"}]):
             received.append(token)
     assert received == ["Half a "]
+
+
+def limited_or(tokens, seen, name):
+    """A chat model that records its calls, and is rate limited unless given tokens to say."""
+    def handler(request):
+        seen.append(name)
+        if tokens is None:
+            return httpx.Response(429, headers={"retry-after": "5"}, json={"error": {"message": "daily limit"}})
+        return httpx.Response(200, content=sse(*tokens))
+
+    return chat(handler)
+
+
+async def test_rate_limited_model_hands_over_to_a_spare_and_is_then_skipped():
+    seen = []
+    cooldown = Cooldown(30)
+    wrapped = FallbackChat(
+        limited_or(None, seen, "main"), ScriptedChat("Local answer."), cooldown, [limited_or(["Spare answer."], seen, "spare")]
+    )
+    for _ in range(2):
+        tokens = [t async for t in wrapped.stream([{"role": "user", "content": "hi"}])]
+        assert "".join(tokens) == "Spare answer."
+    assert seen == ["main", "spare", "spare"]
+    assert not cooldown.active  # Speech to text must stay on Groq.
+
+
+async def test_local_model_answers_when_every_groq_model_is_rate_limited():
+    seen = []
+    wrapped = FallbackChat(
+        limited_or(None, seen, "main"), ScriptedChat("Local answer."), Cooldown(30), [limited_or(None, seen, "spare")]
+    )
+    tokens = [t async for t in wrapped.stream([{"role": "user", "content": "hi"}])]
+    assert "".join(tokens).strip() == "Local answer."
+    assert seen == ["main", "spare"]
+
+
+async def test_no_spare_is_tried_when_groq_is_unreachable():
+    seen = []
+
+    def offline(request):
+        seen.append("main")
+        raise httpx.ConnectError("no internet")
+
+    wrapped = FallbackChat(
+        chat(offline), ScriptedChat("Local answer."), Cooldown(30), [limited_or(["Spare answer."], seen, "spare")]
+    )
+    tokens = [t async for t in wrapped.stream([{"role": "user", "content": "hi"}])]
+    assert "".join(tokens).strip() == "Local answer."
+    assert seen == ["main"]  # A dead connection costs one timeout, not one per model.
+
+
+async def test_spare_models_think_briefly_and_keep_room_to_answer():
+    def handler(request):
+        body = json.loads(request.content)
+        assert body["model"] == "openai/gpt-oss-120b"
+        assert body["reasoning_effort"] == "low" and body["include_reasoning"] is False
+        assert body["max_tokens"] > settings().llm_num_predict
+        return httpx.Response(200, content=sse("Hi."))
+
+    spare = chat(handler)
+    spare.model_name = "openai/gpt-oss-120b"
+    assert [t async for t in spare.stream([{"role": "user", "content": "hi"}])] == ["Hi."]

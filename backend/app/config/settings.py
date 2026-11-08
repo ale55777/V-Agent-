@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # Measured 2026-11-06: about 90 ms to first token, versus about 500 ms for gpt-oss-20b,
     # which reasons before answering.
     groq_llm_model: str = "qwen/qwen3.8-27b"
+    # Tried in order when the main model hits a rate limit. Measured 2026-11-09 with the real
+    # prompt: first word in 200 to 500 ms, and whole sentences.
+    groq_llm_spare_models: list[str] = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
     groq_timeout_seconds: float = 8.0
     # After a failure, stay on the local models this long before trying Groq again.
     groq_retry_after_seconds: float = 60.0
