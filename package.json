@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "workspaces": ["apps/web", "packages/*"],
   "scripts": {
+    "start": "powershell -ExecutionPolicy Bypass -File scripts\\start.ps1",
+    "stop": "powershell -ExecutionPolicy Bypass -File scripts\\stop.ps1",
     "build:web": "npm run build --workspace apps/web",
     "dev:web": "npm run dev --workspace apps/web",
     "typecheck": "npm run typecheck --workspace apps/web"
